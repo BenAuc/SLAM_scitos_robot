@@ -1,0 +1,182 @@
+Mass properties of Base
+     Configuration: Default
+     Coordinate system: -- default --
+
+Density = 1000.00 kilograms per cubic meter
+
+Mass = 56.29 kilograms
+
+Volume = 0.06 cubic meters
+
+Surface area = 1.05 square meters
+
+Center of mass: ( meters )
+	X = 0.00
+	Y = 0.12
+	Z = -0.03
+
+Principal axes of inertia and principal moments of inertia: ( kilograms * square meters )
+Taken at the center of mass.
+	 Ix = ( 0.00,  0.09,  1.00)   	Px = 1.17
+	 Iy = ( 1.00,  0.00,  0.00)   	Py = 1.60
+	 Iz = ( 0.00,  1.00, -0.09)   	Pz = 2.18
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the center of mass and aligned with the output coordinate system.
+	Lxx = 1.60	Lxy = 0.00	Lxz = 0.00
+	Lyx = 0.00	Lyy = 2.17	Lyz = 0.09
+	Lzx = 0.00	Lzy = 0.09	Lzz = 1.17
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the output coordinate system.
+	Ixx = 2.39	Ixy = 0.00	Ixz = 0.00
+	Iyx = 0.00	Iyy = 2.22	Iyz = -0.11
+	Izx = 0.00	Izy = -0.11	Izz = 1.92
+
+##############################################################################################
+
+Mass properties of frame_and_monitor
+     Configuration: Default
+     Coordinate system: -- default --
+
+Density = 1000.00 kilograms per cubic meter
+
+Mass = 12.42 kilograms
+
+Volume = 0.01 cubic meters
+
+Surface area = 0.93 square meters
+
+Center of mass: ( meters )
+	X = 0.00
+	Y = 0.57
+	Z = -0.14
+
+Principal axes of inertia and principal moments of inertia: ( kilograms * square meters )
+Taken at the center of mass.
+	 Ix = ( 0.00,  0.98, -0.22)   	Px = 0.26
+	 Iy = ( 0.00,  0.22,  0.98)   	Py = 0.37
+	 Iz = ( 1.00,  0.00,  0.00)   	Pz = 0.50
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the center of mass and aligned with the output coordinate system.
+	Lxx = 0.50	Lxy = 0.00	Lxz = 0.00
+	Lyx = 0.00	Lyy = 0.26	Lyz = -0.02
+	Lzx = 0.00	Lzy = -0.02	Lzz = 0.36
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the output coordinate system.
+	Ixx = 4.73	Ixy = 0.00	Ixz = 0.00
+	Iyx = 0.00	Iyy = 0.50	Iyz = -1.00
+	Izx = 0.00	Izy = -1.00	Izz = 4.36
+
+##############################################################################################
+
+Mass properties of Computer
+     Configuration: Default
+     Coordinate system: -- default --
+
+Density = 1000.00 kilograms per cubic meter
+
+Mass = 10.94 kilograms
+
+Volume = 0.01 cubic meters
+
+Surface area = 0.30 square meters
+
+Center of mass: ( meters )
+	X = 0.00
+	Y = 0.14
+	Z = 0.00
+
+Principal axes of inertia and principal moments of inertia: ( kilograms * square meters )
+Taken at the center of mass.
+	 Ix = ( 0.00,  1.00,  0.00)   	Px = 0.08
+	 Iy = ( 0.00,  0.00,  1.00)   	Py = 0.10
+	 Iz = ( 1.00,  0.00,  0.00)   	Pz = 0.11
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the center of mass and aligned with the output coordinate system.
+	Lxx = 0.11	Lxy = 0.00	Lxz = 0.00
+	Lyx = 0.00	Lyy = 0.08	Lyz = 0.00
+	Lzx = 0.00	Lzy = 0.00	Lzz = 0.10
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the output coordinate system.
+	Ixx = 0.31	Ixy = 0.00	Ixz = 0.00
+	Iyx = 0.00	Iyy = 0.08	Iyz = 0.00
+	Izx = 0.00	Izy = 0.00	Izz = 0.30
+
+##############################################################################################
+
+Mass properties of head
+     Configuration: Default
+     Coordinate system: -- default --
+
+Density = 1000.00 kilograms per cubic meter
+
+Mass = 0.92 kilograms
+
+Volume = 0.00 cubic meters
+
+Surface area = 0.62 square meters
+
+Center of mass: ( meters )
+	X = 0.00
+	Y = 0.01
+	Z = 0.00
+
+Principal axes of inertia and principal moments of inertia: ( kilograms * square meters )
+Taken at the center of mass.
+	 Ix = ( 0.00,  0.00,  1.00)   	Px = 0.02
+	 Iy = ( 1.00,  0.00,  0.00)   	Py = 0.02
+	 Iz = ( 0.00,  1.00,  0.00)   	Pz = 0.02
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the center of mass and aligned with the output coordinate system.
+	Lxx = 0.02	Lxy = 0.00	Lxz = 0.00
+	Lyx = 0.00	Lyy = 0.02	Lyz = 0.00
+	Lzx = 0.00	Lzy = 0.00	Lzz = 0.02
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the output coordinate system.
+	Ixx = 0.02	Ixy = 0.00	Ixz = 0.00
+	Iyx = 0.00	Iyy = 0.02	Iyz = 0.00
+	Izx = 0.00	Izy = 0.00	Izz = 0.02
+
+##############################################################################################
+
+Mass properties of SICK_S300
+     Configuration: Default
+     Coordinate system: -- default --
+
+Density = 1000.00 kilograms per cubic meter
+
+Mass = 1.37 kilograms
+
+Volume = 0.00 cubic meters
+
+Surface area = 0.08 square meters
+
+Center of mass: ( meters )
+	X = 0.00
+	Y = -0.01
+	Z = 0.07
+
+Principal axes of inertia and principal moments of inertia: ( kilograms * square meters )
+Taken at the center of mass.
+	 Ix = ( 0.00,  0.11,  0.99)   	Px = 0.00
+	 Iy = ( 0.00, -0.99,  0.11)   	Py = 0.00
+	 Iz = ( 1.00,  0.00,  0.00)   	Pz = 0.00
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the center of mass and aligned with the output coordinate system.
+	Lxx = 0.00	Lxy = 0.00	Lxz = 0.00
+	Lyx = 0.00	Lyy = 0.00	Lyz = 0.00
+	Lzx = 0.00	Lzy = 0.00	Lzz = 0.00
+
+Moments of inertia: ( kilograms * square meters )
+Taken at the output coordinate system.
+	Ixx = 0.01	Ixy = 0.00	Ixz = 0.00
+	Iyx = 0.00	Iyy = 0.01	Iyz = 0.00
+	Izx = 0.00	Izy = 0.00	Izz = 0.00

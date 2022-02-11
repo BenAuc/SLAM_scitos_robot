@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<robot name="wheel" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:property name="wheel_diam" value="0.2" />
+  <xacro:property name="wheel_thickness" value="0.04" />
+  <xacro:property name="wheel_mass" value="0.15" />
+
+  <xacro:macro name="diff_wheel" params="prefix parent *origin">
+
+    <link name="${prefix}_wheel">
+    <visual>
+      <geometry>
+        <cylinder length="${wheel_thickness}" radius="${wheel_diam/2}"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="${PI/2} 0 0"/>
+    </visual>
+    <inertial>
+      <mass value="${wheel_mass}"/>
+      <inertia ixx="${(wheel_mass*(3*(wheel_diam/2)*(wheel_diam/2)+base_thickness*wheel_thickness))/12}"
+          ixy="0.0" ixz="0.0" izz="${(wheel_mass*(3*(wheel_diam/2)*(wheel_diam/2)+wheel_thickness*wheel_thickness))/12}"
+          iyz="0.0" iyy="${(wheel_mass*(wheel_diam/2)*(wheel_diam/2))/2}"/>
+    </inertial>
+    <collision>
+      <geometry>
+        <cylinder length="${wheel_thickness}" radius="${wheel_diam/2}"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="${PI/2} 0 0"/>
+    </collision>
+    </link>
+
+    <joint name="base_to_${prefix}_wheel" type="continuous">
+    <axis rpy="0 0 0" xyz="0 1 0"/>
+    <parent link="${parent}"/>
+    <child link="${prefix}_wheel"/>
+    <xacro:insert_block name="origin" />
+    <limit effort="30.0" velocity="20.0" />
+    </joint>
+
+    <!-- This block connects the wheel joint to an actuator (motor), which informs both
+    simulation and visualization of the robot -->
+    <transmission name="${prefix}_wheel_trans">
+    <type>transmission_interface/SimpleTransmission</type>
+    <actuator name="${prefix}_wheel_motor">
+      <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+    <joint name="base_to_${prefix}_wheel">
+      <hardwareInterface>hardware_interface/VelocityJointInterface</hardwareInterface>
+    </joint>
+    </transmission>
+
+    <!-- This block provides the simulator (Gazebo) with information on a few additional
+    physical properties. See http://gazebosim.org/tutorials/?tut=ros_urdf for more-->
+    <gazebo reference="${prefix}_wheel">
+    <mu1 value="1.0"/>
+    <mu2 value="1.0"/>
+    <kp value="10000000.0" />
+    <kd value="1.0" />
+    <slip1 value="0"/>
+    <slip2 value="0"/>
+    <material>Gazebo/Grey</material>
+    </gazebo>
+
+  </xacro:macro>
+
+</robot>
