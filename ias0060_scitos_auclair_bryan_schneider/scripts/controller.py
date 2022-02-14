@@ -60,9 +60,9 @@ class PIDController:
         @result: cmd - (2x1) vector of controller commands
         """
         # Todo: Your code here
-        self.last_error = error
         self.int_error += self.last_error
-        cmd = numpy.multiply(self.Kp, error) + numpy.multiply(self.Ki, self.int_error) + numpy.multiply(self.Kd, self.last_error)
+        cmd = numpy.multiply(self.Kp, error) + numpy.multiply(self.Ki, self.int_error) + numpy.multiply(self.Kd, (self.last_error - error) / self.dt)
+        self.last_error = error
         return cmd
 
 class MotionController:
@@ -110,7 +110,6 @@ class MotionController:
         # TODO: initialize additional class variables if necessary
         self.pose_2D = {'robot_x': 0.0, 'robot_y': 0.0}
         self.theta = 0.0
-        self.current_waypoint = self.waypoints[0]
 
         # Registering start time of this node for performance tracking
         self.startTime = 0
@@ -177,7 +176,7 @@ class MotionController:
         if not self.waypoints:
             return False
 
-        self.current_waypoint = self.waypoints.pop(0)
+        self.waypoints.pop(0)
 
         if not self.waypoints:
             return False
@@ -212,7 +211,7 @@ class MotionController:
         @result: returns list of 2 elements: the error vector in 2D coordinates and the error angle
         """
         # compute error in 2D coordinates
-        error_vector = self.pose_2D - self.current_waypoint
+        error_vector = self.pose_2D - self.waypoints[0]
         error_distance = np.array(numpy.linalg.norm(error_vector))
 
         # compute yaw angle of the target waypoint and error with respect to it
