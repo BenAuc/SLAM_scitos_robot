@@ -1,44 +1,19 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="paused" default="false"/>
-    <arg name="use_sim_time" default="true"/>
-    <arg name="gui" default="true"/>
-    <arg name="headless" default="false"/>
-    <arg name="debug" default="false"/>
-
-    <!-- Load gazebo with an empty world -->
-    <include file="$(find gazebo_ros)/launch/empty_world.launch">
-        <arg name="paused" value="$(arg paused)" />
-        <arg name="use_sim_time" value="$(arg use_sim_time)"/>
-        <arg name="gui" value="$(arg gui)" />
-        <arg name="headless" default="$(arg headless)" />
-        <arg name="debug" value="$(arg debug)" />
+    <!--include other launch files-->
+    <include file="$(find ias0060_scitos_auclair_bryan_schneider)/launch/scitos.launch">
    </include>
 
-    <!-- Load the URDF into ROS parameter server -->
-    <param name="robot_description" command="$(find xacro)/xacro '$(find ias0060_scitos_auclair_bryan_schneider)/data/urdf/scitos.urdf.xacro' " />
-
-    <!-- Publish joint values -->
-    <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
-
-    <!-- convert joint states to TF transforms for rviz, etc  -->
-    <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
-
-    <!-- Load parameters from yaml files into specified namespaces -->
+    <!-- Load parameters from yaml files containing waypoints to parameter server-->
     <rosparam command="load"
-        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/joints.yaml"
-        ns="controller_joints" />
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/mission.yaml"/>
+
+    <!-- Load pid controller gains from yaml file containing and to parameter server-->
     <rosparam command="load"
-        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/diffdrive.yaml"
-        ns="controller_diffdrive" />
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/pid_gains.yaml"
+	ns="/controller_diffdrive"/>
 
-    <!-- Spawn model -->
-    <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
-        args="-urdf -x 0 -y 0 -z 0  -model SCITOS_G5 -param robot_description"/>
-
-    <!-- Spawn the controllers -->
-    <node name="controller_spawner" pkg="controller_manager" type="spawner"
-        args="controller_joints
-          controller_diffdrive" />
+    <!--launch controller node-->
+    <node name="MotionController" pkg="ias0060_scitos_auclair_bryan_schneider" type="talker"/>
 
 </launch>
