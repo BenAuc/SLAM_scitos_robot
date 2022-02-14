@@ -246,9 +246,9 @@ class MotionController:
 
         # TODO: Your code here
         # make 2D pose globally available as np.array
-        self.pose_2D['robot_x'] = self.odom_msg['pose']['pose']['position']['x']
-        self.pose_2D['robot_y'] = self.odom_msg['pose']['pose']['position']['y']
-        roll, pitch, yaw = euler_from_quaternion(self.odom_msg['pose']['pose']['orientation'])
+        self.pose_2D["robot_x"] = self.odom_msg.pose.pose.position.x
+        self.pose_2D["robot_y"] = self.odom_msg.pose.pose.position.y
+        roll, pitch, yaw = euler_from_quaternion(self.odom_msg.pose.pose.orientation)
         self.theta = yaw
 
     def publish_waypoints(self):
