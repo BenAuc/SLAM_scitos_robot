@@ -208,7 +208,7 @@ class MotionController:
         """
         Computes the error between the robot's current position and the target waypoint.
         @param: self
-        @result: returns list of 2 elements: the error vector in 2D coordinates and the error angle
+        @result: returns the error vector in 2D coordinates (euclidian distance, yaw angle)
         """
         # compute error in 2D coordinates
         error_vector = self.pose_2D - self.waypoints[0]
