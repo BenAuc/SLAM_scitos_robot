@@ -14,6 +14,7 @@
 	ns="/controller_diffdrive"/>
 
     <!--launch controller node-->
-    <node name="MotionController" pkg="ias0060_scitos_auclair_bryan_schneider" type="talker"/>
+    <node name="MotionControllerNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="controller.py"
+	output="screen"/>
 
 </launch>
