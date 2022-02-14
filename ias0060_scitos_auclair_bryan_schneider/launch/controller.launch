@@ -15,6 +15,6 @@
 
     <!--launch controller node-->
     <node name="MotionControllerNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="controller.py"
-	output="screen"/>
+	output="screen" respawn="true"/>
 
 </launch>
