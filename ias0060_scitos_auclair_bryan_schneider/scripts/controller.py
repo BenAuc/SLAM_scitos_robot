@@ -65,8 +65,13 @@ class PIDController:
         # print("Cumulative error is : {}".format(self.int_error))
         # PID controller
         # cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, (self.last_error - error) / self.dt)
+
         # P controller
-        cmd = np.multiply(self.Kp, error)
+        # cmd = np.multiply(self.Kp, error)
+
+        # PD controller
+        cmd = np.multiply(self.Kp, error) + np.multiply(self.Kd, (self.last_error - error) / self.dt)
+
         print("Command from PID is : {}".format(cmd))
         self.last_error = error
         return cmd
