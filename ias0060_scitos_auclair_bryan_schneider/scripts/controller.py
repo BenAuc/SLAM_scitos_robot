@@ -102,7 +102,7 @@ class MotionController:
         ### define publishers ###
         self.cmd_vel_pub = rospy.Publisher("/controller_diffdrive/cmd_vel", Twist, queue_size=10)
         self.waypoints_pub = rospy.Publisher(
-            "/mission_control/waypoints", MarkerArray, queue_size=10)
+            "/visualization_marker", MarkerArray, queue_size=10)
 
         ### messages to be handled ###
         self.odom_msg = None
@@ -184,6 +184,8 @@ class MotionController:
 
             ### publish cmd_vel (and marker array) ###
             self.publish_vel_cmd()
+            self.publish_waypoints()
+
 
     def setNextWaypoint(self):
         """
@@ -293,6 +295,7 @@ class MotionController:
         self.marker_array = MarkerArray()
         marker_id = 0
         for waypoint in self.waypoints:
+            print("Publishing waypoint")
             marker = Marker()
             marker.header.frame_id = "odom"
             marker.type = marker.SPHERE
@@ -311,7 +314,7 @@ class MotionController:
             marker.id = marker_id
             marker_id += 1
             self.marker_array.markers.append(marker)
-        self.publisher_waypoints.publish(self.marker_array)
+        self.waypoints_pub.publish(self.marker_array)
 
 
 # entry point of the executable calling the main node function of the

@@ -17,4 +17,6 @@
     <node name="MotionControllerNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="controller.py"
 	output="screen" respawn="true"/>
 
+    <node type="rviz" name="rviz" pkg="rviz" args="-d $(find ias0060_scitos_auclair_bryan_schneider)/data/config/rviz/scitos.rviz" />
+
 </launch>
