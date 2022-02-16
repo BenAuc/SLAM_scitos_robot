@@ -60,17 +60,18 @@ class PIDController:
         @result: cmd - (2x1) vector of controller commands
         """
         # Todo: Your code here
-        self.int_error += self.last_error
+        self.int_error += error
         # print("Current error is : {}".format(self.last_error))
-        # print("Cumulative error is : {}".format(self.int_error))
-        # PID controller
-        # cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, (self.last_error - error) / self.dt)
+        print("Cumulative error is : {}".format(self.int_error))
 
         # P controller
         # cmd = np.multiply(self.Kp, error)
 
         # PD controller
-        cmd = np.multiply(self.Kp, error) + np.multiply(self.Kd, (self.last_error - error) / self.dt)
+        # cmd = np.multiply(self.Kp, error) + np.multiply(self.Kd, (self.last_error - error) / self.dt)
+
+        # PID controller
+        cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, (self.last_error - error) / self.dt)
 
         print("Command from PID is : {}".format(cmd))
         self.last_error = error
