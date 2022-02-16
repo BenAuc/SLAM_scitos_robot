@@ -6,10 +6,13 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /Grid1
         - /Odometry1
         - /RobotModel1
+        - /TF1
         - /TF1/Frames1
         - /LaserScan1
+        - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 719
   - Class: rviz/Selection
@@ -77,6 +80,7 @@ Visualization Manager:
       Keep: 100
       Name: Odometry
       Position Tolerance: 0.10000000149011612
+      Queue Size: 10
       Shape:
         Alpha: 1
         Axes Length: 1
@@ -155,6 +159,7 @@ Visualization Manager:
           Value: true
         right_wheel:
           Value: true
+      Marker Alpha: 1
       Marker Scale: 1
       Name: TF
       Show Arrows: true
@@ -202,6 +207,14 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /mission_control/waypoints
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -230,15 +243,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 7.686008453369141
+      Distance: 8.16848373413086
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
+      Field of View: 0.7853981852531433
       Focal Point:
         X: -0.002663802821189165
-        Y: 1.612977393961046e-5
+        Y: 1.612977393961046e-05
         Z: 0
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
@@ -247,7 +261,6 @@ Visualization Manager:
       Near Clip Distance: 0.009999999776482582
       Pitch: 0.9503976106643677
       Target Frame: base_footprint
-      Value: Orbit (rviz)
       Yaw: 3.028567314147949
     Saved:
       - Class: rviz/Orbit
@@ -257,9 +270,10 @@ Visualization Manager:
           Stereo Focal Distance: 1
           Swap Stereo Eyes: false
           Value: false
+        Field of View: 0.7853981852531433
         Focal Point:
           X: -0.002663802821189165
-          Y: 1.612977393961046e-5
+          Y: 1.612977393961046e-05
           Z: 0
         Focal Shape Fixed Size: true
         Focal Shape Size: 0.05000000074505806
@@ -268,7 +282,6 @@ Visualization Manager:
         Near Clip Distance: 0.009999999776482582
         Pitch: 0.3903978168964386
         Target Frame: base_footprint
-        Value: Orbit (rviz)
         Yaw: 5.703571319580078
 Window Geometry:
   Displays:
@@ -287,4 +300,4 @@ Window Geometry:
     collapsed: true
   Width: 1848
   X: 72
-  Y: 207
+  Y: 27
