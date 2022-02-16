@@ -64,18 +64,19 @@ class PIDController:
         # print("Current error is : {}".format(self.last_error))
         print("Cumulative error is : {}".format(self.int_error))
 
-        # P controller
-        # cmd = np.multiply(self.Kp, error)
-
-        # PD controller
-        # cmd = np.multiply(self.Kp, error) + np.multiply(self.Kd, (self.last_error - error) / self.dt)
-
-        # PID controller
-        cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, (self.last_error - error) / self.dt)
-
+        # PID controller computes command
+        # cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, np.absolute(error - self.last_error) / self.dt)
+        cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, (
+            error - self.last_error) / self.dt)
         print("Command from PID is : {}".format(cmd))
+
+        # u
         self.last_error = error
         return cmd
+
+    def set_int_error_to_zero(self):
+        self.int_error = np.zeros(2)
+
 
 class MotionController:
     """
@@ -171,7 +172,6 @@ class MotionController:
 
             ### calculate error ###
             distance, angle = self.compute_error()
-            # error_to_pid = np.array([np.array([distance]), np.array([angle])])
             error_to_pid = np.array([distance, angle])
 
             print("Error sent to pid is : {}".format(error_to_pid))
@@ -198,6 +198,8 @@ class MotionController:
             return False
 
         self.waypoints.pop(0)
+
+        self.pid.set_int_error_to_zero()
 
         if not self.waypoints:
             return False
@@ -236,15 +238,13 @@ class MotionController:
         # compute error in 2D coordinates
         position = np.array([self.pose_2D['robot_x'], self.pose_2D['robot_y']])
         print("Current set waypoint is : {}".format(self.waypoints[0]))
-
         error_vector_2D = np.array(self.waypoints[0]) - position
         print("error vector in 2D: {}".format(error_vector_2D))
+        # compute Euclidian distance on the 2D error vector
         error_distance = np.linalg.norm(error_vector_2D)
         print("Error distance: {}".format(error_distance))
 
-        # compute yaw angle of the target waypoint and error with respect to it
-        # target_theta = np.arctan2(error_vector_2D[0], error_vector_2D[1])
-        # target_theta = np.arctan2(self.waypoints[0][1], self.waypoints[0][0])
+        # compute yaw angle of the target waypoint and of the error with respect to this target
         target_theta = np.arctan2(error_vector_2D[1], error_vector_2D[0])
         print("Target theta: {}".format(target_theta))
         print("Current theta: {}".format(self.theta))

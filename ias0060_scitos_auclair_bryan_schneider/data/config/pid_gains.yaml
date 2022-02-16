@@ -1,4 +1,4 @@
 ### pid controller gains ###
 
-# 2D waypoints in [[m], [m]]
-gains: {p: [1.6, 1.4], i: [0.1, 0.01], d: [0.6, 0.4]}
+# gains in [distance, angle] 
+gains: {p: [1.65, 1.65], i: [0.2, 0.015], d: [0.88, 0.17]}
