@@ -98,7 +98,9 @@ class MotionController:
 
         ### get parameters ###
         self.waypoints = rospy.get_param("/mission/waypoints")
+        print(self.waypoints)
         self.distance_margin = rospy.get_param("/mission/distance_margin")
+        print(self.distance_margin)
 
         ### initialization of class variables ###
         self.wpIndex = 0    # counter for visited waypoints
@@ -198,9 +200,10 @@ class MotionController:
             return False
 
         # TODO: calculate Euclidian (2D) distance to current waypoint
-        distance = self.compute_error
+        distance = self.compute_error()
+        # print(distance)
 
-        if distance < self.distance_margin:
+        if distance[0] < self.distance_margin:
             return True
         return False
 
@@ -211,8 +214,15 @@ class MotionController:
         @result: returns the error vector in 2D coordinates (euclidian distance, yaw angle)
         """
         # compute error in 2D coordinates
-        error_vector = self.pose_2D - self.waypoints[0]
-        error_distance = np.array(numpy.linalg.norm(error_vector))
+        position = np.array([self.pose_2D['robot_x'], self.pose_2D['robot_y']])
+
+        print(self.waypoints[0])
+        print(position)
+
+        error_vector = position - np.array(self.waypoints[0])
+        print("error vector: {}".format(error_vector))
+        error_distance = numpy.linalg.norm(error_vector)
+        print("error distance: {}".format(error_distance))
 
         # compute yaw angle of the target waypoint and error with respect to it
         target_theta = numpy.arctan2(error_vector[0], error_vector[1])
@@ -247,6 +257,7 @@ class MotionController:
         # TODO: Your code here
         # make 2D pose globally available as np.array
         self.pose_2D["robot_x"] = self.odom_msg.pose.pose.position.x
+        # print(self.pose_2D)
         self.pose_2D["robot_y"] = self.odom_msg.pose.pose.position.y
         euler = euler_from_quaternion([self.odom_msg.pose.pose.orientation.x,
                                        self.odom_msg.pose.pose.orientation.y,
