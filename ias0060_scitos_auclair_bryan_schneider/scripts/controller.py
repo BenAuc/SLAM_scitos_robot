@@ -102,7 +102,7 @@ class MotionController:
         ### define publishers ###
         self.cmd_vel_pub = rospy.Publisher("/controller_diffdrive/cmd_vel", Twist, queue_size=10)
         self.waypoints_pub = rospy.Publisher(
-            "/visualization_marker", MarkerArray, queue_size=10)
+            "/mission_control/waypoints", MarkerArray, queue_size=10)
 
         ### messages to be handled ###
         self.odom_msg = None
