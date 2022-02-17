@@ -2,5 +2,6 @@
 
 # IDE env 
 .vscode
+.test_scripts
 
 # log files?
