@@ -1,0 +1,7 @@
+# Add anything u want git to ignore and not upload to GitHub
+
+# IDE env 
+.vscode
+.test_scripts
+
+# log files?

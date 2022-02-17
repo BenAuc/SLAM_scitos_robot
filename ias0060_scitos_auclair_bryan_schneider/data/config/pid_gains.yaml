@@ -1,4 +1,0 @@
-### pid controller gains ###
-
-# gains in [distance, angle] 
-gains: {p: [1.65, 1.65], i: [0.2, 0.015], d: [0.88, 0.17]}
