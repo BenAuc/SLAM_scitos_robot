@@ -60,10 +60,23 @@ class PIDController:
         @result: cmd - (2x1) vector of controller commands
         """
         # Todo: Your code here
+        self.int_error += error
+        # print("Current error is : {}".format(self.last_error))
+        print("Cumulative error is : {}".format(self.int_error))
+
+        # PID controller computes command
+        # cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, np.absolute(error - self.last_error) / self.dt)
+        cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, (
+            error - self.last_error) / self.dt)
+        print("Command from PID is : {}".format(cmd))
+
+        # u
         self.last_error = error
-        self.int_error += self.last_error
-        cmd = numpy.multiply(self.Kp, error) + numpy.multiply(self.Ki, self.int_error) + numpy.multiply(self.Kd, self.last_error)
         return cmd
+
+    def set_int_error_to_zero(self):
+        self.int_error = np.zeros(2)
+
 
 class MotionController:
     """
@@ -81,6 +94,7 @@ class MotionController:
         """
         ### timing ###
         self.dt = 1.0 / rate
+
         self.rate = rospy.Rate(rate)
 
         ### define subscribers ###
@@ -110,7 +124,6 @@ class MotionController:
         # TODO: initialize additional class variables if necessary
         self.pose_2D = {'robot_x': 0.0, 'robot_y': 0.0}
         self.theta = 0.0
-        self.current_waypoint = self.waypoints[0]
 
         # Registering start time of this node for performance tracking
         self.startTime = 0
@@ -158,14 +171,21 @@ class MotionController:
             #TODO: Your code here
 
             ### calculate error ###
-            error = self.compute_error()
+            distance, angle = self.compute_error()
+            error_to_pid = np.array([distance, angle])
+
+            print("Error sent to pid is : {}".format(error_to_pid))
 
             ### call controller class to get controller commands ###
-            cmd = self.pid.control(error)
+            cmd = self.pid.control(error_to_pid)
+            print("Command received from PID : {}".format(cmd))
+            self.twist_msg.linear.x = cmd[0]
+            self.twist_msg.angular.z = cmd[1]
 
             ### publish cmd_vel (and marker array) ###
             self.publish_vel_cmd()
-            # need to figure out make array
+            self.publish_waypoints()
+
 
     def setNextWaypoint(self):
         """
@@ -177,7 +197,9 @@ class MotionController:
         if not self.waypoints:
             return False
 
-        self.current_waypoint = self.waypoints.pop(0)
+        self.waypoints.pop(0)
+
+        self.pid.set_int_error_to_zero()
 
         if not self.waypoints:
             return False
@@ -199,7 +221,9 @@ class MotionController:
             return False
 
         # TODO: calculate Euclidian (2D) distance to current waypoint
-        distance = self.compute_error
+        distance, angle = self.compute_error()
+        print(distance)
+        print("Distance from waypoint is : {}".format(distance))
 
         if distance < self.distance_margin:
             return True
@@ -209,18 +233,25 @@ class MotionController:
         """
         Computes the error between the robot's current position and the target waypoint.
         @param: self
-        @result: returns list of 2 elements: the error vector in 2D coordinates and the error angle
+        @result: returns the error vector in 2D coordinates as 2x1 vector (euclidian distance, yaw angle)
         """
         # compute error in 2D coordinates
-        error_vector = self.pose_2D - self.current_waypoint
-        error_distance = np.array(numpy.linalg.norm(error_vector))
+        position = np.array([self.pose_2D['robot_x'], self.pose_2D['robot_y']])
+        print("Current set waypoint is : {}".format(self.waypoints[0]))
+        error_vector_2D = np.array(self.waypoints[0]) - position
+        print("error vector in 2D: {}".format(error_vector_2D))
+        # compute Euclidian distance on the 2D error vector
+        error_distance = np.linalg.norm(error_vector_2D)
+        print("Error distance: {}".format(error_distance))
 
-        # compute yaw angle of the target waypoint and error with respect to it
-        target_theta = numpy.arctan2(error_vector[0], error_vector[1])
-        error_angle = np.array(target_theta - self.theta)
+        # compute yaw angle of the target waypoint and of the error with respect to this target
+        target_theta = np.arctan2(error_vector_2D[1], error_vector_2D[0])
+        print("Target theta: {}".format(target_theta))
+        print("Current theta: {}".format(self.theta))
+        error_angle = target_theta - self.theta
+        print("Error theta: {}".format(error_angle))
 
-        error = numpy.array([error_distance, error_angle])
-        return error
+        return error_distance, error_angle
 
     def publish_vel_cmd(self):
         """
@@ -229,8 +260,7 @@ class MotionController:
         @result: publish message
         """
         # TODO: Your code here
-        # needs to concatenate the twist message
-        # self.twist_msg = ...
+        print("Twist msg being sent: {}".format(self.twist_msg))
         self.cmd_vel_pub.publish(self.twist_msg)
 
     def onOdom(self, data):
@@ -247,10 +277,13 @@ class MotionController:
 
         # TODO: Your code here
         # make 2D pose globally available as np.array
-        self.pose_2D['robot_x'] = self.odom_msg['pose']['pose']['position']['x']
-        self.pose_2D['robot_y'] = self.odom_msg['pose']['pose']['position']['y']
-        roll, pitch, yaw = euler_from_quaternion(self.odom_msg['pose']['pose']['orientation'])
-        self.theta = yaw
+        self.pose_2D["robot_x"] = self.odom_msg.pose.pose.position.x
+        self.pose_2D["robot_y"] = self.odom_msg.pose.pose.position.y
+        euler = euler_from_quaternion([self.odom_msg.pose.pose.orientation.x,
+                                       self.odom_msg.pose.pose.orientation.y,
+                                       self.odom_msg.pose.pose.orientation.z,
+                                       self.odom_msg.pose.pose.orientation.w])
+        self.theta = euler[2]
 
     def publish_waypoints(self):
         """
@@ -262,6 +295,7 @@ class MotionController:
         self.marker_array = MarkerArray()
         marker_id = 0
         for waypoint in self.waypoints:
+            print("Publishing waypoint")
             marker = Marker()
             marker.header.frame_id = "odom"
             marker.type = marker.SPHERE
@@ -280,7 +314,7 @@ class MotionController:
             marker.id = marker_id
             marker_id += 1
             self.marker_array.markers.append(marker)
-        self.publisher_waypoints.publish(self.marker_array)
+        self.waypoints_pub.publish(self.marker_array)
 
 
 # entry point of the executable calling the main node function of the
