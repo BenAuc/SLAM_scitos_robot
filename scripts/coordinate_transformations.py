@@ -22,6 +22,11 @@ def world_to_grid(x,y,origin_x,origin_y,width,height,resolution):
     else:
         i = int((x-origin_x)/resolution)
         j = int((y-origin_y)/resolution)
+        # if on edge of grid, move inwards
+        if (x-origin_x) == width:
+            i -= 1
+        if (y-origin_y) == height:
+            j -= 1
         return (i, j)
     
     
@@ -41,7 +46,7 @@ def grid_to_world(gx: int,gy: int,origin_x,origin_y,width,height,resolution):
         tuple of floats: (x, y) - centre position in the given grid cell in world coordinates.
         None if input is out of grid.
     """
-    if gx < 0 or gy < 0 or gx > width/resolution or gy > height/resolution:
+    if gx < 0 or gy < 0 or gx + 1 > width/resolution or gy + 1 > height/resolution:
         return None
     else:
         x = origin_x + (gx + 0.5)*resolution
