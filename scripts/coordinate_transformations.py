@@ -13,7 +13,7 @@ def world_to_grid(x,y,origin_x,origin_y,width,height,resolution):
         resolution: the size of each grid cell in world units
 
     Returns:
-        tuple: (i, j) index positions in the grid
+        tuple of integers: (i, j) index positions in the grid
         None if input is out of bounds.
     """
 
@@ -38,7 +38,7 @@ def grid_to_world(gx: int,gy: int,origin_x,origin_y,width,height,resolution):
         resolution: the size (under the assumption of square sized grid cells) of each grid cell in world units
 
     Returns:
-        tuple: (x, y) - centre position in the given grid cell in world coordinates.
+        tuple of floats: (x, y) - centre position in the given grid cell in world coordinates.
         None if input is out of grid.
     """
     if gx < 0 or gy < 0 or gx > width/resolution or gy > height/resolution:
