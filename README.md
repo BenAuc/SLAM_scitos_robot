@@ -1,1 +1,2 @@
-test
+# ias0060_scitos_auclair_bryan_schneider
+ros package
