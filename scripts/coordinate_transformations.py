@@ -46,7 +46,7 @@ def grid_to_world(gx: int,gy: int,origin_x,origin_y,width,height,resolution):
         tuple of floats: (x, y) - centre position in the given grid cell in world coordinates.
         None if input is out of grid.
     """
-    if gx < 0 or gy < 0 or gx + 1 > width/resolution or gy + 1 > height/resolution:
+    if gx < 0 or gy < 0 or gx + 1 > width/resolution or gy + 1 > height/resolution: #indexed from zero
         return None
     else:
         x = origin_x + (gx + 0.5)*resolution
