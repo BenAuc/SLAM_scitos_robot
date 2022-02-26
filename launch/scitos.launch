@@ -1,4 +1,5 @@
 <?xml version="1.0"?>
+<env name="GAZEBO_MODEL_PATH" value="$(find ias0060_scitos_auclair_bryan_schneider)/data:$(optenv GAZEBO_MODEL_PATH)"/>
 <launch>
     <arg name="paused" default="false"/>
     <arg name="use_sim_time" default="true"/>
@@ -13,6 +14,7 @@
         <arg name="gui" value="$(arg gui)" />
         <arg name="headless" default="$(arg headless)" />
         <arg name="debug" value="$(arg debug)" />
+        <arg name="world_name" value="$(find ias0060_scitos_auclair_bryan_schneider)/data/worlds/test_world.sdf"/>
    </include>
 
     <!-- Load the URDF into ROS parameter server -->
