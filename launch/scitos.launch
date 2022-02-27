@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
-<env name="GAZEBO_MODEL_PATH" value="$(find ias0060_scitos_auclair_bryan_schneider)/data:$(optenv GAZEBO_MODEL_PATH)"/>
 <launch>
+    <env name="GAZEBO_MODEL_PATH" value="$(find ias0060_scitos_auclair_bryan_schneider)/data:$(optenv GAZEBO_MODEL_PATH)"/>
     <arg name="paused" default="false"/>
     <arg name="use_sim_time" default="true"/>
     <arg name="gui" default="true"/>
