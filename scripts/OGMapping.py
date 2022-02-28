@@ -13,8 +13,8 @@ dates.
 
 import math
 import numpy as np
-from Bresenham import *
-from transformations import *
+# from Bresenham import *
+# from transformations import *
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import geometry_msgs.msg
@@ -81,7 +81,7 @@ class OGMap:
             ### update occupancy grid array for indices of points along the laser line
             #  based on logodds values ###
     
-    def returnMap():
+    def returnMap(self):
         """returns latest map as OccupancyGrid object?
         """
         pass
@@ -110,8 +110,8 @@ class OGMapping:
         self.rate = rospy.Rate(10)
 
         ### subscribers ###
-        self.pose_sub = rospy.Subscriber("/ground_truth", Odometry, odometryCallback)
-        self.laserScan_sub = rospy.Subscriber("/laser_scan", LaserScan, laserScanCallback)
+        self.pose_sub = rospy.Subscriber("/ground_truth", Odometry, callback= self.odometryCallback)
+        self.laserScan_sub = rospy.Subscriber("/laser_scan", LaserScan, self.laserScanCallback)
         
         ### publishers ###
         self.map_pub = rospy.Publisher("/map", OccupancyGrid, queue_size=1) # queue_size=1 => only the newest map available
@@ -121,10 +121,13 @@ class OGMapping:
         self.odom_msg = None
 
         ### get map parameters ###
-        # --> load parameters from yaml file
+        self.width = rospy.get_param("/map/width")
+        self.height = rospy.get_param("/map/height")
+        self.resolution = rospy.get_param("/map/resolution")
+        self.map_origin = rospy.get_param("/map/origin")
 
         ### initialize occupancy grid map class ###
-        # self.occ_grid_map = OGMap(...)
+        self.occ_grid_map = OGMap(self.height, self.width, self.resolution, self.map_origin)
 
         # define static components of occupancy grid to be published
         # --> not sure what this^ means?
@@ -151,7 +154,7 @@ class OGMapping:
         @result: updates the map information and publishes new map data
         """
         # self.occ_grid_map.updatemap(..., self.robot_pose)
-        self.map_pub.publish(self.occ_grid_map.returnMap()) 
+        # --> self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
         pass
 
     def odometryCallback(self, data):
@@ -163,9 +166,12 @@ class OGMapping:
                  coordinates robot_x, robot_y and the yaw angle theta
         """
         self.odom_msg = data
-        
-        self.robot_pose = [data.pose.pose.position[0], data.pose.pose.position[0],
-                           euler_from_quaternion(data.pose.pose.orientation)[2]]
+        theta = euler_from_quaternion([data.pose.pose.orientation.x,
+                                       data.pose.pose.orientation.y,
+                                       data.pose.pose.orientation.z,
+                                       data.pose.pose.orientation.w])[2]
+        # theta = euler_from_quaternion(np.array(data.pose.pose.orientation))
+        self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
         pass
 
     def laserScanCallback(self, data):
@@ -176,6 +182,9 @@ class OGMapping:
         @result: internal update of the map using the occ_grid_map class
         """
         self.scan_msg = data
+        
+        self.occ_grid_map.updatemap(data, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose)
+        
         pass
 
 

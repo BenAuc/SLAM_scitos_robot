@@ -6,7 +6,8 @@
 
     <!-- Load parameters from yaml files containing waypoints to parameter server-->
     <rosparam command="load"
-        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map.yaml"/>
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map.yaml"
+        ns="/map"/>
 
     <!--launch mapping node-->
     <node name="MappingNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="OGMapping.py"
