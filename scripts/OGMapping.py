@@ -80,7 +80,12 @@ class OGMap:
 
             ### update occupancy grid array for indices of points along the laser line
             #  based on logodds values ###
-
+    
+    def returnMap():
+        """returns latest map as OccupancyGrid object?
+        """
+        pass
+    
 
 class OGMapping:
     """
@@ -105,25 +110,27 @@ class OGMapping:
         self.rate = rospy.Rate(10)
 
         ### subscribers ###
-
+        self.pose_sub = rospy.Subscriber("/ground_truth", Odometry, odometryCallback)
+        self.laserScan_sub = rospy.Subscriber("/laser_scan", LaserScan, laserScanCallback)
+        
         ### publishers ###
-
+        self.map_pub = rospy.Publisher("/map", OccupancyGrid, queue_size=1) # queue_size=1 => only the newest map available
 
         ### define messages to be handled ###
         self.scan_msg = None
         self.odom_msg = None
 
         ### get map parameters ###
-
+        # --> load parameters from yaml file
 
         ### initialize occupancy grid map class ###
         # self.occ_grid_map = OGMap(...)
 
         # define static components of occupancy grid to be published
-
+        # --> not sure what this^ means?
 
         ### initialization of class variables ###
-
+        self.robot_pose = None
 
     def run(self):
         """
@@ -143,7 +150,8 @@ class OGMapping:
         @param: self
         @result: updates the map information and publishes new map data
         """
-
+        # self.occ_grid_map.updatemap(..., self.robot_pose)
+        self.map_pub.publish(self.occ_grid_map.returnMap()) 
         pass
 
     def odometryCallback(self, data):
@@ -154,7 +162,10 @@ class OGMapping:
         @result: global variable pose_2D containing the planar
                  coordinates robot_x, robot_y and the yaw angle theta
         """
-        # self.odom_msg = data
+        self.odom_msg = data
+        
+        self.robot_pose = [data.pose.pose.position[0], data.pose.pose.position[0],
+                           euler_from_quaternion(data.pose.pose.orientation)[2]]
         pass
 
     def laserScanCallback(self, data):
@@ -164,7 +175,7 @@ class OGMapping:
                 LaserScan message
         @result: internal update of the map using the occ_grid_map class
         """
-        # self.scan_msg = data
+        self.scan_msg = data
         pass
 
 
