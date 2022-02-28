@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<launch>
+    <!--include other launch files-->
+    <include file="$(find ias0060_scitos_auclair_bryan_schneider)/launch/scitos.launch">
+   </include>
+
+    <!-- Load parameters from yaml files containing waypoints to parameter server-->
+    <rosparam command="load"
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map.yaml"/>
+
+    <!--launch mapping node-->
+    <node name="MappingNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="OGMapping.py"
+	output="screen" respawn="true"/>
+
+</launch>
