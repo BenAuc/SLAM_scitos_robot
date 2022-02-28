@@ -1,0 +1,5 @@
+### Occupancy grid parameters ###
+width: 20 # [m]
+height: 20 # [m]
+resolution: 0.1 # size of a cell [m/cell]
+origin: [0, 0] # [x, y] origin of the map in world coordinates[m]
