@@ -27,12 +27,13 @@ class OGMap:
     """
     Map class which translates the laser ranges into grid cell
     occupancies and updates the OccupancyGrid variable
-    @input: map metadata (heigh, width, resolution, origin)
+    @input: map metadata (height, width, resolution, origin)
+    @input: sensor model (reading probability, beyond reading probability, below reading probability, tau)
     @input: laser ranges and laser metadata (min / max angles,
             angle increments, min / max ranges)
     @output: updated occupancy grid map as 2D np.array()
     """
-    def __init__(self, height, width, resolution, map_origin):
+    def __init__(self, height, width, resolution, map_origin, tau, r_prob, beyond_r_prob, below_r_prob):
         """
         class initialization
         @param: self
@@ -40,12 +41,24 @@ class OGMap:
         @param: width - map size along x-axis [m]
         @param: resolution - size of a grid cell [m]
         @param: map_origin - origin in real world [m, m]
+        @param: reading probability
+        @param: beyond reading probability
+        @param: below reading probability
+        @param: tau - depth of the reading point
         @result: initializes occupancy grid variable and
                  logg odds variable based on sensor model
         """
         ### get map metadata ###
+        self.height = height
+        self.width = width
+        self.resolution = resolution
+        self.map_origin = map_origin
 
         ### define probabilities for Bayesian belief update ###
+        self.tau = tau
+        self.r_prob = r_prob
+        self.beyond_r_prob = beyond_r_prob
+        self.below_r_prob = below_r_prob
 
         ### define logood variables ###
 
@@ -126,8 +139,15 @@ class OGMapping:
         self.resolution = rospy.get_param("/map/resolution")
         self.map_origin = rospy.get_param("/map/origin")
 
+        ### get sensor model ###
+        self.tau = np.array(rospy.get_param("sensor_model/tau"))
+        self.r_prob = np.array(rospy.get_param("sensor_model/r_prob"))
+        self.beyond_r_prob = np.array(rospy.get_param("sensor_model/beyond_r_prob"))
+        self.below_r_prob = np.array(rospy.get_param("sensor_model/below_r_prob"))
+
         ### initialize occupancy grid map class ###
-        self.occ_grid_map = OGMap(self.height, self.width, self.resolution, self.map_origin)
+        self.occ_grid_map = OGMap(self.height, self.width, self.resolution, self.map_origin,
+                                  self.tau, self.r_prob, self.beyond_r_prob, self.below_r_prob)
 
         # define static components of occupancy grid to be published
         # --> not sure what this^ means?
