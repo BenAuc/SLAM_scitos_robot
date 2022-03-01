@@ -4,16 +4,11 @@
     <include file="$(find ias0060_scitos_auclair_bryan_schneider)/launch/scitos.launch">
    </include>
 
-    <!-- Load yaml file containing map metadata to ros parameter server-->
+    <!-- Load parameters from yaml files containing waypoints to parameter server-->
     <rosparam command="load"
         file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map.yaml"
         ns="/map"/>
-
-    <!-- Load yaml file containing sensor model to ros parameter server-->
-    <rosparam command="load"
-        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/sensor_model.yaml"
-        ns="/sensor_model"/>
-
+sensor_model/
     <!--launch mapping node-->
     <node name="MappingNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="OGMapping.py"
 	output="screen" respawn="true"/>
