@@ -31,12 +31,12 @@ class OGMap:
     Map class which translates the laser ranges into grid cell
     occupancies and updates the OccupancyGrid variable
     @input: map metadata (height, width, resolution, origin)
-    @input: sensor model (reading probability, beyond reading probability, below reading probability, tau)
+    @input: sensor model (reading probability, below reading probability, tau)
     @input: laser ranges and laser metadata (min / max angles,
             angle increments, min / max ranges)
     @output: updated occupancy grid map as 2D np.array()
     """
-    def __init__(self, height, width, resolution, map_origin, tau, r_prob, beyond_r_prob, below_r_prob):
+    def __init__(self, height, width, resolution, map_origin, tau, r_prob, below_r_prob):
         """
         class initialization
         @param: self
@@ -45,7 +45,6 @@ class OGMap:
         @param: resolution - size of a grid cell [m]
         @param: map_origin - origin in real world [m, m]
         @param: reading probability
-        @param: beyond reading probability
         @param: below reading probability
         @param: tau - depth of the reading point
         @result: initializes occupancy grid variable and
@@ -61,12 +60,10 @@ class OGMap:
         ### get sensor model ###
         self.tau = tau
         self.r_prob = r_prob
-        self.beyond_r_prob = beyond_r_prob
         self.below_r_prob = below_r_prob
 
         ### define logood variables ###
         self.odds_r_prob = self.r_prob / (1 - self.r_prob)
-        self.odds_beyond_r_prob = self.beyond_r_prob / (1 - self.beyond_r_prob)
         self.odds_below_r_prob = self.below_r_prob / (1 - self.below_r_prob)
 
         ### initialize occupancy and logodd grid variables ###
@@ -92,11 +89,15 @@ class OGMap:
         ### posterior is the multiplication of the 2 i.e. update of the latter based on the former
 
         ### transform robot pose into grid coordinates ###
-        robot_pose_grid = world_to_grid(robot_pose[0], robot_pose[1],
+        robot_pos_grid = world_to_grid(robot_pose[0], robot_pose[1],
                                         self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
         ### for all rays in the laser scan do: ###
         for idx, measured_range in enumerate(laser_scan):
+
+            # discard the measured range if outside of allowed range
+            if measured_range < range_min or measured_range > range_max:
+                continue
 
             ### calculate coordinate of object the laser ray hit in
             # grid coordinates ###
@@ -109,14 +110,24 @@ class OGMap:
             delta_y = measured_range * np.sin(theta)
 
             # convert world coordinates of target into grid coordinates
-            target_position_grid = world_to_grid(robot_pose[0] + delta_x, robot_pose[1] + delta_y,
+            target_pos_grid = world_to_grid(robot_pose[0] + delta_x, robot_pose[1] + delta_y,
                                                  self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
             ### define a line from laser ray point to robot pose
             # in grid coordinates(for example with bresenham) ###
+            cells_to_update = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_pos_grid[0], target_pos_grid[1])
 
             ### update logoods array for indices of points along the laser line with either
             # free or occupied probabilities. ###
+            first = True
+            for cell in reversed(cells_to_update):
+                if first:
+                    first = False
+                    nb_steps = self.tau / self.resolution
+                    for step in range(nb_steps):
+
+                else:
+                    self.grid_map[cell[0]][cell[1]] = self.grid_map[cell[0]][cell[1]] +
 
             ### update occupancy grid array for indices of points along the laser line
             #  based on logodds values ###
@@ -169,12 +180,11 @@ class OGMapping:
         ### get sensor model ###
         self.tau = np.array(rospy.get_param("sensor_model/tau"))
         self.r_prob = np.array(rospy.get_param("sensor_model/r_prob"))
-        self.beyond_r_prob = np.array(rospy.get_param("sensor_model/beyond_r_prob"))
         self.below_r_prob = np.array(rospy.get_param("sensor_model/below_r_prob"))
 
         ### initialize occupancy grid map class ###
         self.occ_grid_map = OGMap(self.height, self.width, self.resolution, self.map_origin,
-                                  self.tau, self.r_prob, self.beyond_r_prob, self.below_r_prob)
+                                  self.tau, self.r_prob, self.below_r_prob)
 
         # define static components of occupancy grid to be published
         # --> not sure what this^ means?

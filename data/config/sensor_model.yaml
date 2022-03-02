@@ -2,5 +2,4 @@
 
 tau: 0.2 # [m]
 r_prob: 0.8 # [m]
-beyond_r_prob: 0.5 # [m]
 below_r_prob: 0.2 # [m]
