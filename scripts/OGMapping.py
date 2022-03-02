@@ -105,17 +105,26 @@ class OGMap:
             # compute yaw angle of laser beam
             theta = yaw + angle_min + idx_range * angle_increment
 
-            # convert measured range into world coordinates
-            delta_x = measured_range * np.cos(theta)
-            delta_y = measured_range * np.sin(theta)
+            # convert (measured range - uncertainty per sensor model) into world coordinates
+            delta_x = (measured_range - self.tau) * np.cos(theta)
+            delta_y = (measured_range - self.tau) * np.sin(theta)
 
             # convert world coordinates of target into grid coordinates
-            target_pos_grid = world_to_grid(robot_pose[0] + delta_x, robot_pose[1] + delta_y,
+            target_minus_tau = world_to_grid(robot_pose[0] + delta_x, robot_pose[1] + delta_y,
+                                                 self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
+
+            # convert (measured range + uncertainty per sensor model) into world coordinates
+            delta_x = (measured_range + self.tau) * np.cos(theta)
+            delta_y = (measured_range + self.tau) * np.sin(theta)
+
+            # convert world coordinates of target into grid coordinates
+            target_plus_tau = world_to_grid(robot_pose[0] + delta_x, robot_pose[1] + delta_y,
                                                  self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
             ### define a line from laser ray point to robot pose
             # in grid coordinates(for example with bresenham) ###
-            cells_to_update = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_pos_grid[0], target_pos_grid[1])
+            non_occupied_cells = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_minus_tau[0], target_minus_tau[1])
+            occupied_cells = bresenham(target_minus_tau[0], target_minus_tau[1], target_plus_tau[0], target_plus_tau[1])
 
             ### update logoods array for indices of points along the laser line with either
             # free or occupied probabilities. ###
@@ -123,83 +132,70 @@ class OGMap:
             need_sorting_out = True
 
             # we start with the coordinates of the target itself and process the inverted list
-            cells_not_occupied = cells_to_update.copy()
+            cells_not_occupied = non_occupied_cells.copy()
 
-            for cell in reversed(cells_to_update):
+            for cell in reversed(non_occupied_cells):
 
-                # if the cell is the coordinates of the target itself
+                # # if the cell is the coordinates of the target itself
+                # if first:
+                #     first = False
+                #     # define a box of size tau in world coordinates where the target might be
+                #     target_box = []
+                #     nb_steps = self.tau // (2 * self.resolution)
+                #
+                #     # define coordinates of each cell in this box
+                #     # moving along x axis
+                #     for step_x in range(0, nb_steps + 1):
+                #         new_cell = (cell[0] + step_x, cell[1])
+                #         target_box.append(new_cell)
+                #
+                #         # moving along y axis
+                #         for step_y in range(1, nb_steps + 1):
+                #             new_cell_plus_step = (new_cell[0], new_cell[1] + step_y)
+                #             target_box.append(new_cell_plus_step)
+                #             new_cell_minus_step = (new_cell[0], new_cell[1] - step_y)
+                #             target_box.append(new_cell_minus_step)
+                #
+                #         if step_x != 0:
+                #             new_cell = (cell[0] - step_x, cell[1])
+                #             target_box.append(new_cell)
+                #
+                #             # moving along y axis
+                #             for step_y in range(1, nb_steps + 1):
+                #                 new_cell_plus_step = (new_cell[0], new_cell[1] + step_y)
+                #                 target_box.append(new_cell_plus_step)
+                #                 new_cell_minus_step = (new_cell[0], new_cell[1] - step_y)
+                #                 target_box.append(new_cell_minus_step)
+
+                # the first cell in the reversed list of non-occupied cells is the same as the first cell
+                # in the list of occupied cells
                 if first:
-                    first = False
-                    # define a box of size tau in world coordinates where the target might be
-                    target_box = []
-                    nb_steps = self.tau // (2 * self.resolution)
+                    for item in enumerate(occupied_cells):
 
-                    # define coordinates of each cell in this box
-                    # moving along x axis
-                    for step_x in range(0, nb_steps + 1):
-                        new_cell = (cell[0] + step_x, cell[1])
-                        target_box.append(new_cell)
+                        # if the cell is also in the list of occupied cells it is deemed occupied
+                        if cell == item:
 
-                        # moving along y axis
-                        for step_y in range(1, nb_steps + 1):
-                            new_cell_plus_step = (new_cell[0], new_cell[1] + step_y)
-                            target_box.append(new_cell_plus_step)
-                            new_cell_minus_step = (new_cell[0], new_cell[1] - step_y)
-                            target_box.append(new_cell_minus_step)
+                            # update consists in adding to the prior info on this cell (i.e., current logodds value)
+                            # the logodds for an occupied cell
+                            self.grid_map[cell[0]][cell[1]] += self.odds_r_prob
 
-                        if step_x != 0:
-                            new_cell = (cell[0] - step_x, cell[1])
-                            target_box.append(new_cell)
+                            # remove updated cell from the list of occupied cells
+                            occupied_cells.remove(item)
+                            first = False
+                            break
 
-                            # moving along y axis
-                            for step_y in range(1, nb_steps + 1):
-                                new_cell_plus_step = (new_cell[0], new_cell[1] + step_y)
-                                target_box.append(new_cell_plus_step)
-                                new_cell_minus_step = (new_cell[0], new_cell[1] - step_y)
-                                target_box.append(new_cell_minus_step)
-
+                # if the cell is not in the uncertainty range around the reading it is deemed not occupied
                 else:
-                    if need_sorting_out:
-                        for item in enumerate(target_box):
+                    # update consists in adding the prior information on this cell (current value in the grid)
+                    # with the logodds for a non-occupied cell
+                    self.grid_map[cell[0]][cell[1]] += self.odds_below_r_prob
 
-                            # if the cell is in the box it is deemed occupied
-                            # update occupancy grid with the observation for this cell
-                            if cell == item:
+            # update remaining occupied cells
+            for cell in enumerate(occupied_cells):
 
-                                # update consists of adding to the prior info on this cell (i.e., current logodds value)
-                                # the logodds for an occupied cell
-                                self.grid_map[cell[0]][cell[1]] += self.odds_r_prob
-
-                                # remove updated cell from the box
-                                target_box.remove(item)
-                                continue
-
-                            else:
-                                # update consists of adding the prior information on this cell (current value in the grid)
-                                # with the logodds for a non-occupied cell
-                                self.grid_map[cell[0]][cell[1]] += self.odds_below_r_prob
-
-                                # all other items in the list of cells to be updated are deemed outside the box
-                                need_sorting_out = False
-
-                    # if the cell is not in the box it is deemed not occupied
-                    # update occupancy grid with the observation for this cell
-                    else:
-
-                        # update consists of adding the prior information on this cell (current value in the grid)
-                        # with the logodds for a non-occupied cell
-                        self.grid_map[cell[0]][cell[1]] += self.odds_below_r_prob
-
-            # process remaining cells in the box
-            for item in enumerate(target_box):
-
-                # any cell in the box is deemed occupied
-                # update occupancy grid with the observation for this cell
-                if cell == item:
-                    # update consists of adding to the prior info on this cell (i.e., current logodds value)
-                    # the logodds for an occupied cell
-                    self.grid_map[cell[0]][cell[1]] += self.odds_r_prob
-
+                # update consists in adding to the prior info on this cell (i.e., current logodds value)
+                # the logodds for an occupied cell
+                self.grid_map[cell[0]][cell[1]] += self.odds_r_prob
 
     def returnMap(self):
         """returns latest map as OccupancyGrid object?
