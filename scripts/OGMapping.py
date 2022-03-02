@@ -23,6 +23,7 @@ from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
 from coordinate_transformations import world_to_grid
 from coordinate_transformations import grid_to_world
+from bresenham import bresenham
 
 
 class OGMap:
@@ -75,7 +76,7 @@ class OGMap:
         ### initialize auxillary variables ###
 
 
-    def updatemap(self,laser_scan,angle_min,angle_max,angle_increment,range_min,range_max,robot_pose):
+    def updatemap(self,laser_scan,angle_min,angle_max,angle_increment,range_min,range_max,robot_pose, yaw):
         """
         Function that updates the occupancy grid based on the laser scan ranges.
         The logodds formulation of the Bayesian belief update is used
@@ -91,12 +92,25 @@ class OGMap:
         ### posterior is the multiplication of the 2 i.e. update of the latter based on the former
 
         ### transform robot pose into grid coordinates ###
-        robot_pose_grid = world_to_grid(robot_pose[0], robot_pose[1])
+        robot_pose_grid = world_to_grid(robot_pose[0], robot_pose[1],
+                                        self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
         ### for all rays in the laser scan do: ###
+        for idx, measured_range in enumerate(laser_scan):
 
             ### calculate coordinate of object the laser ray hit in
             # grid coordinates ###
+
+            # compute yaw angle of laser beam
+            theta = yaw + angle_min + idx * angle_increment
+
+            # convert measured range into world coordinates
+            delta_x = measured_range * np.cos(theta)
+            delta_y = measured_range * np.sin(theta)
+
+            # convert world coordinates of target into grid coordinates
+            target_position_grid = world_to_grid(robot_pose[0] + delta_x, robot_pose[1] + delta_y,
+                                                 self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
             ### define a line from laser ray point to robot pose
             # in grid coordinates(for example with bresenham) ###
@@ -215,6 +229,8 @@ class OGMapping:
         @result: internal update of the map using the occ_grid_map class
         """
         self.scan_msg = data
+
+        # needs to extract the data from
         
         self.occ_grid_map.updatemap(data, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose)
         
