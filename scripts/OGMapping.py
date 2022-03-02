@@ -21,6 +21,8 @@ import geometry_msgs.msg
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
+from coordinate_transformations import world_to_grid
+from coordinate_transformations import grid_to_world
 
 
 class OGMap:
@@ -55,14 +57,20 @@ class OGMap:
         self.map_origin = map_origin
 
         ### define probabilities for Bayesian belief update ###
+        ### get sensor model ###
         self.tau = tau
         self.r_prob = r_prob
         self.beyond_r_prob = beyond_r_prob
         self.below_r_prob = below_r_prob
 
         ### define logood variables ###
+        self.odds_r_prob = self.r_prob / (1 - self.r_prob)
+        self.odds_beyond_r_prob = self.beyond_r_prob / (1 - self.beyond_r_prob)
+        self.odds_below_r_prob = self.below_r_prob / (1 - self.below_r_prob)
 
         ### initialize occupancy and logodd grid variables ###
+        # 50% chances of each cell being occupied amounts to log(0.5) = 0 hence initialization to 0
+        self.grid_map = np.zeros([width, height])
 
         ### initialize auxillary variables ###
 
@@ -78,7 +86,12 @@ class OGMap:
         @param: robot_pose - the planar robot pose in world coordinates
         @result: updates the list of occupancy cells based on occupancy probabilities ranging from [0,100]
         """
+        ### prior is sensor reading & sensor model
+        ### likelihood is the current occupancy map
+        ### posterior is the multiplication of the 2 i.e. update of the latter based on the former
+
         ### transform robot pose into grid coordinates ###
+        robot_pose_grid = world_to_grid(robot_pose[0], robot_pose[1])
 
         ### for all rays in the laser scan do: ###
 
