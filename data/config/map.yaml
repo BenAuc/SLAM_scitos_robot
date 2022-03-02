@@ -1,6 +1,6 @@
 ### Occupancy grid parameters ###
 
-width: 20 # [m]
-height: 20 # [m]
+width: 20 # [m] in world coordinates along x-axis from -10.6 to 8.5 (identified with robot)
+height: 20 # [m] in world coordinates along y-axis from -1.7 to 17.6 (identified with robot)
 resolution: 0.1 # size of a cell [m/cell]
-origin: [0, 0] # [x, y] origin of the map in world coordinates[m]
+origin: [-11, -2.1] # [x, y] origin of the map in world coordinates[m] closest corner of environment to the world coordinates origin

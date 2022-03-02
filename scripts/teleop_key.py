@@ -98,8 +98,8 @@ if __name__ == "__main__":
     settings = termios.tcgetattr(sys.stdin)
 
     rospy.init_node('turtlebot_teleop')
-    # pub = rospy.Publisher('cmd_vel', Twist)
-    pub = rospy.Publisher('controller_diffdrive/cmd_vel', Twist)
+    pub = rospy.Publisher('cmd_vel', Twist)
+    # pub = rospy.Publisher('controller_diffdrive/cmd_vel', Twist)
 
     x = 0
     th = 0
