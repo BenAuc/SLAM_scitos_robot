@@ -289,10 +289,11 @@ class OGMapping:
                  coordinates robot_x, robot_y and the yaw angle theta
         """
         self.odom_msg = data
-        theta = euler_from_quaternion([data.pose.pose.orientation.x,
-                                       data.pose.pose.orientation.y,
-                                       data.pose.pose.orientation.z,
-                                       data.pose.pose.orientation.w])[2]
+        self.robot_yaw = euler_from_quaternion([data.pose.pose.orientation.x,
+                                                data.pose.pose.orientation.y,
+                                                data.pose.pose.orientation.z,
+                                                data.pose.pose.orientation.w],
+                                               axes='szyx')[0]
         # theta = euler_from_quaternion(np.array(data.pose.pose.orientation))
         self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
         pass
@@ -305,10 +306,8 @@ class OGMapping:
         @result: internal update of the map using the occ_grid_map class
         """
         self.scan_msg = data
-
-        # needs to extract the data from
-        
-        self.occ_grid_map.updatemap(data, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose)
+        # print(type(data.ranges)) returned tuple
+        self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
         
         pass
 
