@@ -124,8 +124,10 @@ class OGMap:
             ### define a line from laser ray point to robot pose
             # in grid coordinates(for example with bresenham) ###
             non_occupied_cells = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_minus_tau[0], target_minus_tau[1])
-            occupied_cells = bresenham(target_minus_tau[0], target_minus_tau[1], target_plus_tau[0], target_plus_tau[1])
-
+            if target_plus_tau:
+                occupied_cells = bresenham(target_minus_tau[0], target_minus_tau[1], target_plus_tau[0], target_plus_tau[1])
+            else:
+                print("+Tau out of map bounds")
             ### update logoods array for indices of points along the laser line with either
             # free or occupied probabilities. ###
             first = True
