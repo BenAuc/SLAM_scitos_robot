@@ -68,7 +68,7 @@ class OGMap:
 
         ### initialize occupancy and logodd grid variables ###
         # 50% chances of each cell being occupied amounts to log(0.5) = 0 hence initialization to 0
-        self.grid_map = np.zeros([width, height])
+        self.grid_map = np.zeros([self.height // self.resolution, self.width // self.resolution])
 
         ### initialize auxillary variables ###
 
