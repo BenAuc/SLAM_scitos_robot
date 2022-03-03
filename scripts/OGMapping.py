@@ -63,8 +63,8 @@ class OGMap:
         self.below_r_prob = below_r_prob
 
         ### define logood variables ###
-        self.odds_r_prob = self.r_prob / (1 - self.r_prob)
-        self.odds_below_r_prob = self.below_r_prob / (1 - self.below_r_prob)
+        self.odds_r_prob = np.log(self.r_prob / (1 - self.r_prob))
+        self.odds_below_r_prob = np.log(self.below_r_prob / (1 - self.below_r_prob))
 
         ### initialize occupancy and logodd grid variables ###
         # 50% chances of each cell being occupied amounts to log(0.5) = 0 hence initialization to 0
