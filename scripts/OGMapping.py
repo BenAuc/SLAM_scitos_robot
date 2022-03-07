@@ -13,16 +13,13 @@ dates.
 
 import math
 import numpy as np
-# from Bresenham import *
-# from transformations import *
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import geometry_msgs.msg
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
-from coordinate_transformations import world_to_grid
-from coordinate_transformations import grid_to_world
+from coordinate_transformations import world_to_grid, grid_to_world
 from bresenham import bresenham
 
 
@@ -67,8 +64,9 @@ class OGMap:
         self.odds_below_r_prob = np.log(self.below_r_prob / (1 - self.below_r_prob))
 
         ### initialize occupancy and logodd grid variables ###
+        # grid_map is stored as log-odds
         # 50% chances of each cell being occupied amounts to log(0.5) = 0 hence initialization to 0
-        self.grid_map = np.zeros([self.height // self.resolution, self.width // self.resolution])
+        self.grid_map = np.zeros([int(self.height / self.resolution), int(self.width / self.resolution)])
 
         ### initialize auxillary variables ###
 
@@ -104,7 +102,10 @@ class OGMap:
 
             # compute yaw angle of laser beam
             theta = yaw + angle_min + idx_range * angle_increment
-
+            # I think it should be
+            # theta = yaw - angle_min - idx_range*angle_increment
+            # if theta is angle in world coor. from x axis towards y axis.
+            
             # convert (measured range - uncertainty per sensor model) into world coordinates
             delta_x = (measured_range - self.tau) * np.cos(theta)
             delta_y = (measured_range - self.tau) * np.sin(theta)
@@ -177,7 +178,7 @@ class OGMap:
 
                             # update consists in adding to the prior info on this cell (i.e., current logodds value)
                             # the logodds for an occupied cell
-                            self.grid_map[cell[0]][cell[1]] += self.odds_r_prob
+                            self.grid_map[cell[0], cell[1]] += self.odds_r_prob
 
                             # remove updated cell from the list of occupied cells
                             occupied_cells.remove(item)
@@ -188,21 +189,26 @@ class OGMap:
                 else:
                     # update consists in adding the prior information on this cell (current value in the grid)
                     # with the logodds for a non-occupied cell
-                    self.grid_map[cell[0]][cell[1]] += self.odds_below_r_prob
+                    self.grid_map[cell[0], cell[1]] += self.odds_below_r_prob
 
             # update remaining occupied cells
             for cell in enumerate(occupied_cells):
 
                 # update consists in adding to the prior info on this cell (i.e., current logodds value)
                 # the logodds for an occupied cell
-                self.grid_map[cell[0]][cell[1]] += self.odds_r_prob
+                self.grid_map[cell[0], cell[1]] += self.odds_r_prob
 
     def returnMap(self):
         """returns latest map as OccupancyGrid object?
         """
-        # transform logodds into probabilities (see formula given by the prof on moodle)
-        pass
+        # transform logodds into probabilities [0,1] (see formula given by the prof on moodle)
+        probability = lambda x: 1 - 1 /(1 + np.e**x)
+        grid = OccupancyGrid()
+        grid.data = (probability(self.grid_map)*100).flatten().astype(np.int8)
+        
+        return grid
     
+        
 
 class OGMapping:
     """
@@ -277,7 +283,7 @@ class OGMapping:
         @result: updates the map information and publishes new map data
         """
         # self.occ_grid_map.updatemap(..., self.robot_pose)
-        # --> self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
+        self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
         pass
 
     def odometryCallback(self, data):
@@ -307,7 +313,8 @@ class OGMapping:
         """
         self.scan_msg = data
         # print(type(data.ranges)) returned tuple
-        self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
+        if self.robot_pose: # update map only if odometry data available
+            self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
         
         pass
 
