@@ -15,13 +15,15 @@ import math
 import numpy as np
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-import geometry_msgs.msg
+import tf2_ros
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Point
+from geometry_msgs.msg import Quaternion
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import MapMetaData
+from std_msgs.msg import Header
+from sensor_msgs.msg import LaserScan
 from coordinate_transformations import world_to_grid, grid_to_world
 from bresenham import bresenham
 
@@ -66,11 +68,15 @@ class OGMap:
         self.map_meta_data.origin = Pose()
         self.map_meta_data.origin.position = Point()
         self.map_meta_data.origin.position.x, self.map_meta_data.origin.position.y = map_origin
-        print("map origin is : {}".format(self.map_meta_data.origin.position.x))
+        # self.map_meta_data.origin.orientation = Quaternion()
+        # self.map_meta_data.origin.orientation.x, self.map_meta_data.orientation.y, self.map_meta_data.orientation.z, self.map_meta_data.orientation.w = 0
+        # print("map origin is : {}".format(self.map_meta_data.origin.position.x))
 
         ### declaration of Occupancy Grid message
         self.grid = OccupancyGrid()
         self.grid.info = self.map_meta_data
+        self.grid.header = Header()
+        self.grid.header.frame_id = "map"
         self.grid.data = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
         
         ### define probabilities for Bayesian belief update ###
@@ -195,7 +201,6 @@ class OGMap:
         # NOTE: could potentially be made computationally less costly by only updating specific cells
         probability = lambda x: 1 - 1 /(1 + np.e**x) # may produce Warning: overflow encountered in power, it's OK to ignore
         self.grid.data = (probability(self.grid_map)*100).flatten().astype(np.int8)
-        
         return self.grid
     
         
@@ -248,6 +253,8 @@ class OGMapping:
         self.occ_grid_map = OGMap(self.height, self.width, self.resolution, self.map_origin,
                                   self.tau, self.r_prob, self.below_r_prob)
 
+        print("here's the map width: {}".format(self.occ_grid_map.width))
+
         # define static components of occupancy grid to be published
         # --> not sure what this^ means?
 
@@ -263,6 +270,7 @@ class OGMapping:
         while not rospy.is_shutdown():
             ### step only when odometry and laser data are available ###
             if self.scan_msg and self.odom_msg:
+                # print("publishing map")
                 self.step()
             self.rate.sleep()
 
@@ -306,7 +314,7 @@ class OGMapping:
         self.scan_msg = data
         # print(type(data.ranges)) # returned tuple
         if self.robot_pose: # update map only if odometry data available
-            self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
+            # self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
             pass
         pass
 
