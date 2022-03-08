@@ -19,6 +19,7 @@ import geometry_msgs.msg
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import MapMetaData
 from coordinate_transformations import world_to_grid, grid_to_world
 from bresenham import bresenham
 
@@ -52,7 +53,16 @@ class OGMap:
         self.width = width
         self.resolution = resolution
         self.map_origin = map_origin
-
+        
+        ### map metadata for msg ###
+        # http://docs.ros.org/en/lunar/api/nav_msgs/html/msg/MapMetaData.html
+        self.map_meta_data = MapMetaData()
+        self.map_meta_data.resolution = resolution # size of a cell
+        self.map_meta_data.width = int(width/resolution) # [cells]
+        self.map_meta_data.height = int(height/resolution) # [cells]
+        self.map_meta_data.origin = Pose()
+        self.map_meta_data.origin.position.x, m.origin.position.y = map_origin
+        
         ### define probabilities for Bayesian belief update ###
         ### get sensor model ###
         self.tau = tau
@@ -202,8 +212,10 @@ class OGMap:
         """returns latest map as OccupancyGrid object?
         """
         # transform logodds into probabilities [0,1] (see formula given by the prof on moodle)
-        probability = lambda x: 1 - 1 /(1 + np.e**x)
+        probability = lambda x: 1 - 1 /(1 + np.e**x) # may produce Warning: overflow encountered in power, it's OK to ignore
         grid = OccupancyGrid()
+        grid.header()
+        grid.info = self.map_meta_data
         grid.data = (probability(self.grid_map)*100).flatten().astype(np.int8)
         
         return grid
@@ -300,8 +312,10 @@ class OGMapping:
                                                 data.pose.pose.orientation.z,
                                                 data.pose.pose.orientation.w],
                                                axes='szyx')[0]
+        # print(self.robot_yaw)
         # theta = euler_from_quaternion(np.array(data.pose.pose.orientation))
         self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
+        
         pass
 
     def laserScanCallback(self, data):
@@ -312,10 +326,10 @@ class OGMapping:
         @result: internal update of the map using the occ_grid_map class
         """
         self.scan_msg = data
-        # print(type(data.ranges)) returned tuple
+        # print(type(data.ranges)) # returned tuple
         if self.robot_pose: # update map only if odometry data available
             self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
-        
+            pass
         pass
 
 
