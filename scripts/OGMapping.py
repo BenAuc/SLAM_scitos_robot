@@ -60,8 +60,8 @@ class OGMap:
         self.map_meta_data.resolution = resolution # size of a cell
         self.map_meta_data.width = int(width/resolution) # [cells]
         self.map_meta_data.height = int(height/resolution) # [cells]
-        self.map_meta_data.origin = Pose()
-        self.map_meta_data.origin.position.x, m.origin.position.y = map_origin
+        self.map_meta_data.origin = geometry_msgs.msg.Pose()
+        self.map_meta_data.origin.position.x, self.map_meta_data.origin.position.y = map_origin
         
         ### define probabilities for Bayesian belief update ###
         ### get sensor model ###
