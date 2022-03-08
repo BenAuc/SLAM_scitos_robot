@@ -2,7 +2,7 @@
 <launch>
     <!--include other launch files-->
     <include file="$(find ias0060_scitos_auclair_bryan_schneider)/launch/scitos.launch">
-        <arg name="gui" value="true"/> <!--change here-->
+        <arg name="gui" value="false"/> <!--change here-->
         <arg name="headless" value="false"/>
     </include>
 

@@ -77,8 +77,12 @@ class OGMap:
         self.grid.info = self.map_meta_data
         self.grid.header = Header()
         self.grid.header.frame_id = "map"
+        # self.grid.data = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
+
+#############################################
+        # debugging
         self.grid.data = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
-        
+
         ### define probabilities for Bayesian belief update ###
         ### get sensor model ###
         self.tau = tau
@@ -92,7 +96,7 @@ class OGMap:
         ### initialize occupancy and logodd grid variables ###
         # grid_map is stored as log-odds
         # 50% chances of each cell being occupied amounts to log(0.5) = 0 hence initialization to 0
-        self.grid_map = np.zeros([int(self.height / self.resolution), int(self.width / self.resolution)])
+        self.prob_map = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
 
         ### initialize auxillary variables ###
 
@@ -120,6 +124,7 @@ class OGMap:
         ### for all rays in the laser scan do: ###
         for idx_range, measured_range in enumerate(laser_scan):
 
+            print("currently processing range D = {}".format(measured_range))
             # discard the measured range if outside of allowed range
             if measured_range < range_min or measured_range > range_max:
                 continue
@@ -132,7 +137,7 @@ class OGMap:
             # I think it should be
             # theta = yaw - angle_min - idx_range*angle_increment
             # if theta is angle in world coor. from x axis towards y axis.
-            
+
             # convert (measured range - uncertainty per sensor model) into world coordinates
             delta_x = (measured_range - self.tau) * np.cos(theta)
             delta_y = (measured_range - self.tau) * np.sin(theta)
@@ -152,8 +157,10 @@ class OGMap:
             ### define a line from laser ray point to robot pose
             # in grid coordinates(for example with bresenham) ###
             non_occupied_cells = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_minus_tau[0], target_minus_tau[1])
+            print("current set of non-occupied cells = {}".format(non_occupied_cells))
             occupied_cells = bresenham(target_minus_tau[0], target_minus_tau[1], target_plus_tau[0], target_plus_tau[1])
-        
+            print("current set of occupied cells = {}".format(occupied_cells))
+
             ### update logoods array for indices of points along the laser line with either
             # free or occupied probabilities. ###
             first = True
@@ -164,6 +171,11 @@ class OGMap:
 
             for cell in reversed(non_occupied_cells):
 
+                # first column in the array runs along y-axis
+                x = cell[0]
+                # last row in the array runs along x-axis
+                y = -1 * cell[1]
+
                 # the first cell in the reversed list of non-occupied cells is the same as the first cell
                 # in the list of occupied cells
                 if first:
@@ -172,9 +184,17 @@ class OGMap:
                         # if the cell is also in the list of occupied cells it is deemed occupied
                         if cell == item:
 
-                            # update consists in adding to the prior info on this cell (i.e., current logodds value)
-                            # the logodds for an occupied cell
-                            self.grid_map[cell[0], cell[1]] += self.odds_r_prob
+                            # transform current probability of occupancy into logodds representation
+                            print("current probability is: {}".format(self.prob_map[y][x]))
+                            if self.prob_map[y][x] == -1:
+                                prior_belief = 0
+                            else:
+                                prior_belief = np.log(self.prob_map[y][x] / (1 - self.prob_map[y][x]))
+                            # perform the update
+                            posterior_belief = prior_belief + self.odds_r_prob
+                            # return to probabilistic representation
+                            self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
+                            print("updated probability is: {}".format(self.prob_map[y][x]))
 
                             # remove updated cell from the list of occupied cells
                             occupied_cells.remove(item)
@@ -183,26 +203,54 @@ class OGMap:
 
                 # if the cell is not in the uncertainty range around the reading it is deemed not occupied
                 else:
-                    # update consists in adding the prior information on this cell (current value in the grid)
-                    # with the logodds for a non-occupied cell
-                    self.grid_map[cell[0], cell[1]] += self.odds_below_r_prob
+
+                    print("current probability is: {}".format(self.prob_map[y][x]))
+                    if self.prob_map[y][x] == -1:
+                        prior_belief = 0
+                    else:
+                        prior_belief = np.log(self.prob_map[y][x] / (1 - self.prob_map[y][x]))
+                    # perform the update
+                    posterior_belief = prior_belief + self.odds_below_r_prob
+                    # return to probabilistic representation
+                    self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
+                    print("updated probability is: {}".format(self.prob_map[y][x]))
 
             # update remaining occupied cells
             for cell in enumerate(occupied_cells):
 
-                # update consists in adding to the prior info on this cell (i.e., current logodds value)
-                # the logodds for an occupied cell
-                self.grid_map[cell[0], cell[1]] += self.odds_r_prob
+                # first column in the array runs along y-axis
+                x = cell[0]
+                # last row in the array runs along x-axis
+                y = -1 * cell[1]
+
+                print("current probability is: {}".format(self.prob_map[y][x]))
+                if self.prob_map[y][x] == -1:
+                    prior_belief = 0
+                else:
+                    prior_belief = np.log(self.prob_map[y][x] / (1 - self.prob_map[y][x]))
+                # perform the update
+                posterior_belief = prior_belief + self.odds_r_prob
+                # return to probabilistic representation
+                self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
+                print("updated probability is: {}".format(self.prob_map[y][x]))
 
     def returnMap(self):
-        """returns latest map as OccupancyGrid object?
+        """returns latest map as OccupancyGrid object
         """
         # transform logodds into probabilities [0,1] (see formula given by the prof on moodle)
         # NOTE: could potentially be made computationally less costly by only updating specific cells
-        probability = lambda x: 1 - 1 /(1 + np.e**x) # may produce Warning: overflow encountered in power, it's OK to ignore
-        self.grid.data = (probability(self.grid_map)*100).flatten().astype(np.int8)
+        # probability = lambda x: 1 - 1 /(1 + np.e**x) # may produce Warning: overflow encountered in power, it's OK to ignore
+        # self.grid.data = (probability(self.prob_map)*100).flatten().astype(np.int8)
+
+        #############################################
+        # debugging
+        # scale between 0 and 100 only the cells that have been visited
+        scaled_prob = self.prob_map.copy()
+        scaled_prob[scaled_prob > 0] *= 100
+        print("Here's the map : {}".format(scaled_prob))
+        self.grid.data = scaled_prob.flatten().astype(np.int8)
         return self.grid
-    
+
         
 
 class OGMapping:
@@ -314,8 +362,7 @@ class OGMapping:
         self.scan_msg = data
         # print(type(data.ranges)) # returned tuple
         if self.robot_pose: # update map only if odometry data available
-            # self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
-            pass
+            self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
         pass
 
 
