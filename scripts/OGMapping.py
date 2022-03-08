@@ -214,7 +214,7 @@ class OGMap:
         # transform logodds into probabilities [0,1] (see formula given by the prof on moodle)
         probability = lambda x: 1 - 1 /(1 + np.e**x) # may produce Warning: overflow encountered in power, it's OK to ignore
         grid = OccupancyGrid()
-        grid.header()
+        # grid.Header()
         grid.info = self.map_meta_data
         grid.data = (probability(self.grid_map)*100).flatten().astype(np.int8)
         
