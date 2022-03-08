@@ -16,6 +16,8 @@ import numpy as np
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import geometry_msgs.msg
+from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Point
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
@@ -61,8 +63,10 @@ class OGMap:
         self.map_meta_data.resolution = resolution # size of a cell
         self.map_meta_data.width = int(width/resolution) # [cells]
         self.map_meta_data.height = int(height/resolution) # [cells]
-        self.map_meta_data.origin = geometry_msgs.msg.Pose()
+        self.map_meta_data.origin = Pose()
+        self.map_meta_data.origin.position = Point()
         self.map_meta_data.origin.position.x, self.map_meta_data.origin.position.y = map_origin
+        print("map origin is : {}".format(self.map_meta_data.origin.position.x))
 
         ### declaration of Occupancy Grid message
         self.grid = OccupancyGrid()
