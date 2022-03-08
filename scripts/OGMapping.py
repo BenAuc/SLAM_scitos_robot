@@ -53,7 +53,8 @@ class OGMap:
         self.width = width
         self.resolution = resolution
         self.map_origin = map_origin
-        
+
+        ### static content of Occupancy Grid message
         ### map metadata for msg ###
         # http://docs.ros.org/en/lunar/api/nav_msgs/html/msg/MapMetaData.html
         self.map_meta_data = MapMetaData()
@@ -62,6 +63,11 @@ class OGMap:
         self.map_meta_data.height = int(height/resolution) # [cells]
         self.map_meta_data.origin = geometry_msgs.msg.Pose()
         self.map_meta_data.origin.position.x, self.map_meta_data.origin.position.y = map_origin
+
+        ### declaration of Occupancy Grid message
+        self.grid = OccupancyGrid()
+        self.grid.info = self.map_meta_data
+        self.grid.data = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
         
         ### define probabilities for Bayesian belief update ###
         ### get sensor model ###
@@ -79,6 +85,7 @@ class OGMap:
         self.grid_map = np.zeros([int(self.height / self.resolution), int(self.width / self.resolution)])
 
         ### initialize auxillary variables ###
+
 
 
     def updatemap(self,laser_scan,angle_min,angle_max,angle_increment,range_min,range_max,robot_pose, yaw):
@@ -147,37 +154,6 @@ class OGMap:
 
             for cell in reversed(non_occupied_cells):
 
-                # # if the cell is the coordinates of the target itself
-                # if first:
-                #     first = False
-                #     # define a box of size tau in world coordinates where the target might be
-                #     target_box = []
-                #     nb_steps = self.tau // (2 * self.resolution)
-                #
-                #     # define coordinates of each cell in this box
-                #     # moving along x axis
-                #     for step_x in range(0, nb_steps + 1):
-                #         new_cell = (cell[0] + step_x, cell[1])
-                #         target_box.append(new_cell)
-                #
-                #         # moving along y axis
-                #         for step_y in range(1, nb_steps + 1):
-                #             new_cell_plus_step = (new_cell[0], new_cell[1] + step_y)
-                #             target_box.append(new_cell_plus_step)
-                #             new_cell_minus_step = (new_cell[0], new_cell[1] - step_y)
-                #             target_box.append(new_cell_minus_step)
-                #
-                #         if step_x != 0:
-                #             new_cell = (cell[0] - step_x, cell[1])
-                #             target_box.append(new_cell)
-                #
-                #             # moving along y axis
-                #             for step_y in range(1, nb_steps + 1):
-                #                 new_cell_plus_step = (new_cell[0], new_cell[1] + step_y)
-                #                 target_box.append(new_cell_plus_step)
-                #                 new_cell_minus_step = (new_cell[0], new_cell[1] - step_y)
-                #                 target_box.append(new_cell_minus_step)
-
                 # the first cell in the reversed list of non-occupied cells is the same as the first cell
                 # in the list of occupied cells
                 if first:
@@ -212,13 +188,11 @@ class OGMap:
         """returns latest map as OccupancyGrid object?
         """
         # transform logodds into probabilities [0,1] (see formula given by the prof on moodle)
+        # NOTE: could potentially be made computationally less costly by only updating specific cells
         probability = lambda x: 1 - 1 /(1 + np.e**x) # may produce Warning: overflow encountered in power, it's OK to ignore
-        grid = OccupancyGrid()
-        # grid.Header()
-        grid.info = self.map_meta_data
-        grid.data = (probability(self.grid_map)*100).flatten().astype(np.int8)
+        self.grid.data = (probability(self.grid_map)*100).flatten().astype(np.int8)
         
-        return grid
+        return self.grid
     
         
 
