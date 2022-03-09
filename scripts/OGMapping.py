@@ -9,25 +9,25 @@ dates.
 
 @author: Christian Meurer
 @date: February 2022
+
+Update: complete of assignment 4
+Team: Scitos group 3
+Team members: Benoit Auclair; Michael Bryan
+Date: March 9, 2022
 """
 
-import math
 import numpy as np
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-import tf2_ros
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import Point
-from geometry_msgs.msg import Quaternion
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import MapMetaData
 from std_msgs.msg import Header
 from sensor_msgs.msg import LaserScan
-from coordinate_transformations import world_to_grid, grid_to_world
+from coordinate_transformations import world_to_grid
 from bresenham import bresenham
-
-
 
 class OGMap:
     """
@@ -61,7 +61,6 @@ class OGMap:
 
         ### static content of Occupancy Grid message
         ### map metadata for msg ###
-        # http://docs.ros.org/en/lunar/api/nav_msgs/html/msg/MapMetaData.html
         self.map_meta_data = MapMetaData()
         self.map_meta_data.resolution = resolution # size of a cell
         self.map_meta_data.width = int(width/resolution) # [cells]
@@ -69,20 +68,12 @@ class OGMap:
         self.map_meta_data.origin = Pose()
         self.map_meta_data.origin.position = Point()
         self.map_meta_data.origin.position.x, self.map_meta_data.origin.position.y = map_origin
-        # self.map_meta_data.origin.orientation = Quaternion()
-        # self.map_meta_data.origin.orientation.x, self.map_meta_data.orientation.y, self.map_meta_data.orientation.z, self.map_meta_data.orientation.w = 0
-        # print("map origin is : {}".format(self.map_meta_data.origin.position.x))
 
         ### declaration of Occupancy Grid message
         self.grid = OccupancyGrid()
         self.grid.info = self.map_meta_data
         self.grid.header = Header()
         self.grid.header.frame_id = "map"
-        # self.grid.data = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
-
-#############################################
-        # debugging
-        # self.grid.data = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
         self.grid.data = None
 
         ### define probabilities for Bayesian belief update ###
@@ -96,12 +87,8 @@ class OGMap:
         self.odds_below_r_prob = np.log(self.below_r_prob / (1 - self.below_r_prob))
 
         ### initialize occupancy and logodd grid variables ###
-        # grid_map is stored as log-odds
-        # 50% chances of each cell being occupied amounts to log(0.5) = 0 hence initialization to 0
         self.prob_map = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)])
         self.logodds_map = np.zeros([int(self.height / self.resolution), int(self.width / self.resolution)])
-
-        ### initialize auxillary variables ###
 
 
     def updatemap(self,laser_scan,angle_min,angle_max,angle_increment,range_min,range_max,robot_pose, yaw):
@@ -115,129 +102,96 @@ class OGMap:
         @param: robot_pose - the planar robot pose in world coordinates
         @result: updates the list of occupancy cells based on occupancy probabilities ranging from [0,100]
         """
-        ### prior is sensor reading & sensor model
-        ### likelihood is the current occupancy map
-        ### posterior is the multiplication of the 2 i.e. update of the latter based on the former
 
         ### transform robot pose into grid coordinates ###
         robot_pos_grid = world_to_grid(robot_pose[0], robot_pose[1],
                                         self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
-        print("robot_pos_grid = {}".format(robot_pos_grid))
-        print(robot_pose)
         ### for all rays in the laser scan do: ###
         for idx_range, measured_range in enumerate(laser_scan):
 
-            # print("currently processing range D = {}".format(measured_range))
             # discard the measured range if outside of allowed range
             if measured_range < range_min or measured_range > range_max:
                 continue
 
-            ### calculate coordinate of object the laser ray hit in
-            # grid coordinates ###
-
+            ### calculate coordinates of object the laser ray hit in
             # compute yaw angle of laser beam
             theta = yaw + angle_min + idx_range * angle_increment
-            # I think it should be
-            # theta = yaw - angle_min - idx_range*angle_increment
-            # if theta is angle in world coor. from x axis towards y axis.
-            # angle_min is -pi/2, angle_max is pi/2
 
-            # print("current yaw D = {}".format(yaw))
-            # print("current theta D = {}".format(theta))
-            # print("angle_min D = {}".format(angle_min))
-            # print("angle_increment D = {}".format(angle_increment))
+            # the line joining the robot to the object is resolved in two sections
+            # the first section are non-occupied cells
+            # the second section are occupied cells
 
-            # convert (measured range - uncertainty per sensor model) into world coordinates
-            delta_x = (measured_range - self.tau) * np.cos(theta)
-            delta_y = (measured_range - self.tau) * np.sin(theta)
+            # section 1
+            # calculate how far away from the robot the object is
+            # taking into account the uncertainty tau around the reading
+            delta_x = (measured_range - self.tau/2) * np.cos(theta)
+            delta_y = (measured_range - self.tau/2) * np.sin(theta)
 
-            # convert world coordinates of target into grid coordinates
+            # convert world coordinates of (target - tau) into grid coordinates
             target_minus_tau = world_to_grid(robot_pose[0] + delta_x, robot_pose[1] + delta_y,
                                                  self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
-            # convert (measured range + uncertainty per sensor model) into world coordinates
-            delta_x = (measured_range + self.tau) * np.cos(theta)
-            delta_y = (measured_range + self.tau) * np.sin(theta)
+            # section 2
+            # calculate how far away from the robot the object is
+            # taking into account the uncertainty tau around the reading
+            delta_x = (measured_range + self.tau/2) * np.cos(theta)
+            delta_y = (measured_range + self.tau/2) * np.sin(theta)
 
-            # convert world coordinates of target into grid coordinates
+            # convert world coordinates of (target + tau) into grid coordinates
             target_plus_tau = world_to_grid(robot_pose[0] + delta_x, robot_pose[1] + delta_y,
                                                  self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
             ### define a line from laser ray point to robot pose
             if target_minus_tau and target_plus_tau:
-                # in grid coordinates(for example with bresenham) ###
+
+                # resolve location of non-occupied cells in grid coordinates
                 non_occupied_cells = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_minus_tau[0], target_minus_tau[1])
                 # get rid of the first cell in the list because it is also listed as an occupied cell
                 non_occupied_cells.pop(-1)
-                # print("current set of non-occupied cells = {}".format(non_occupied_cells))
+
+                # resolve location of occupied cells in grid coordinates
                 occupied_cells = bresenham(target_minus_tau[0], target_minus_tau[1], target_plus_tau[0], target_plus_tau[1])
-                # print("current set of occupied cells = {}".format(occupied_cells))
 
                 # process list of non-occupied cells
                 for cell in non_occupied_cells:
-                    # print("current cell = {}".format(cell))
-                    # first column in the array runs along y-axis
                     x = cell[0]
-                    # last row in the array runs along x-axis
                     y = cell[1]
-                    # y = -1 * cell[1]
-
                     self.cellUpdate(x, y, self.odds_below_r_prob)
 
-                # update occupied cells
+                # process list of occupied cells
                 for cell in occupied_cells:
-                    # print("current cell = {}".format(cell))
-                    # first column in the array runs along y-axis
                     x = cell[0]
-                    # last row in the array runs along x-axis
-                    # y = -1 * cell[1]
                     y = cell[1]
                     self.cellUpdate(x, y, self.odds_r_prob)
 
     def cellUpdate(self, x, y, logodds_update):
-
-        # print("x in grid = {}".format(x))
-        # print("y in grid = {}".format(y))
-        # print("shape of map = {}".format(self.prob_map.shape))
-
+        """updates a specific cell in the occupancy grid following an observation
+            @param: x, y - indices of the cell in the occupancy grid
+            @param: logodds_update - likelihood of the observation in logodds representation
+            @result: updated occupancy grid maps (in logodds and probability representations)
+        """
         # if the cell had not been observed so far we set the prior on it to 0.5
-        # print("current probability is: {}".format(self.prob_map[y][x]))
         if self.prob_map[y][x] == -1:
             self.prob_map[y][x] = 0.5
 
-        # perform the update
-        prior_belief = self.logodds_map[y][x]
-        posterior_belief = prior_belief + logodds_update
-        self.logodds_map[y][x] = posterior_belief
+        # update the logodds representation
+        self.logodds_map[y][x] += logodds_update
 
-        # return to probabilistic representation
-        self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
-        # print("current prior_belief logodds: {}".format(prior_belief))
-        # print("current update: {}".format(logodds_update))
-        # print("current posterior_belief logodds: {}".format(posterior_belief))
-        # print("updated probability is: {}".format(self.prob_map[y][x]))
+        # update the probability representation
+        self.prob_map[y][x] = 1 - 1 / (1 + np.exp(self.logodds_map[y][x]))
 
     def returnMap(self):
         """returns latest map as OccupancyGrid object
         """
-        # transform logodds into probabilities [0,1] (see formula given by the prof on moodle)
-        # NOTE: could potentially be made computationally less costly by only updating specific cells
-        # probability = lambda x: 1 - 1 /(1 + np.e**x) # may produce Warning: overflow encountered in power, it's OK to ignore
-        # self.grid.data = (probability(self.prob_map)*100).flatten().astype(np.int8)
-
-        #############################################
-        # debugging
-        # scale between 0 and 100 only the cells that have been visited
-        print("###############################################")
-    
+        # scale the occupancy between 0 and 100 for every cell that's been seen at least one
         scaled_prob = self.prob_map.copy()
         scaled_prob[scaled_prob > 0] *= 100
-        # print("Here's the map : {}".format(scaled_prob))
+
+        # integrate the updated map to the occupancy message
         self.grid.data = scaled_prob.flatten().astype(np.int8)
         return self.grid
 
-        
 
 class OGMapping:
     """
@@ -268,17 +222,13 @@ class OGMapping:
         ### publishers ###
         self.map_pub = rospy.Publisher("/map", OccupancyGrid, queue_size=1) # queue_size=1 => only the newest map available
 
-        ### define messages to be handled ###
-        self.scan_msg = None
-        self.odom_msg = None
-
         ### get map parameters ###
         self.width = rospy.get_param("/map/width")
         self.height = rospy.get_param("/map/height")
         self.resolution = rospy.get_param("/map/resolution")
         self.map_origin = rospy.get_param("/map/origin")
         
-        ### fet robot parameters ###
+        ### fetch laser frame ###
         self.laserScaner_to_robotbase = rospy.get_param("/robot_parameters/laserscanner_pose")
 
         ### get sensor model ###
@@ -290,14 +240,11 @@ class OGMapping:
         self.occ_grid_map = OGMap(self.height, self.width, self.resolution, self.map_origin,
                                   self.tau, self.r_prob, self.below_r_prob)
 
-        # print("here's the map width: {}".format(self.occ_grid_map.width))
-
-        # define static components of occupancy grid to be published
-        # --> not sure what this^ means?
-
         ### initialization of class variables ###
         self.robot_pose = None
         self.laserscanner_pose = None
+        self.scan_msg = None
+        self.odom_msg = None
 
     def run(self):
         """
@@ -308,12 +255,7 @@ class OGMapping:
         while not rospy.is_shutdown():
             ### step only when odometry and laser data are available ###
             if self.scan_msg and self.odom_msg:
-                print("publishing map")
                 self.step()
-
-            # sleep for
-            # cycle = 5000
-            # for step in range(cycle):
             self.rate.sleep()
 
     def step(self):
@@ -322,17 +264,17 @@ class OGMapping:
         @param: self
         @result: updates the map information and publishes new map data
         """
-        print("##########################################################################################")
-
-        # if self.scan_msg and self.odom_msg:
-        #     self.occ_grid_map.updatemap(self.scan_msg.ranges, self.scan_msg.angle_min, self.scan_msg.angle_max,
-        #                                 self.scan_msg.angle_increment, self.scan_msg.range_min, self.scan_msg.range_max,
-        #                                 self.robot_pose, self.robot_yaw)
+        ### step only when odometry and laser data are available ###
         if self.scan_msg and self.odom_msg:
-            self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
-            if self.robot_pose: # update map only if odometry data available
-                self.occ_grid_map.updatemap(self.scan_msg.ranges, self.scan_msg.angle_min, self.scan_msg.angle_max, self.scan_msg.angle_increment, self.scan_msg.range_min, self.scan_msg.range_max, self.laserscanner_pose, self.robot_yaw)
+            # publish current occupancy map
+            self.map_pub.publish(self.occ_grid_map.returnMap())
 
+            # update map only if odometry data available
+            if self.robot_pose:
+                self.occ_grid_map.updatemap(self.scan_msg.ranges, self.scan_msg.angle_min,
+                                            self.scan_msg.angle_max, self.scan_msg.angle_increment,
+                                            self.scan_msg.range_min, self.scan_msg.range_max,
+                                            self.laserscanner_pose, self.robot_yaw)
 
     def odometryCallback(self, data):
         """
@@ -343,20 +285,18 @@ class OGMapping:
                  coordinates robot_x, robot_y and the yaw angle theta
         """
         self.odom_msg = data
+        # extract yaw angle of robot pose using the transformation on the odometry message
         self.robot_yaw = euler_from_quaternion([data.pose.pose.orientation.x,
                                                 data.pose.pose.orientation.y,
                                                 data.pose.pose.orientation.z,
                                                 data.pose.pose.orientation.w],
                                                axes='szyx')[0]
-        # print(self.robot_yaw)
-        # theta = euler_from_quaternion(np.array(data.pose.pose.orientation))
+        # extract robot pose
         self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
-        T_mat = np.array([[np.cos(self.robot_yaw), -np.sin(self.robot_yaw)],
-                          [np.sin(self.robot_yaw), np.cos(self.robot_yaw)]])
+
+        # shift the robot pose to the laser frame
         self.laserscanner_pose = [self.robot_pose[0] + np.cos(self.robot_yaw)*self.laserScaner_to_robotbase[0],
                                   self.robot_pose[1] + np.sin(self.robot_yaw)*self.laserScaner_to_robotbase[0]]
-        
-        pass
 
     def laserScanCallback(self, data):
         """
@@ -366,11 +306,6 @@ class OGMapping:
         @result: internal update of the map using the occ_grid_map class
         """
         self.scan_msg = data
-        # # print(type(data.ranges)) # returned tuple
-        # if self.robot_pose: # update map only if odometry data available
-        #     self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
-
-
 
 if __name__ == '__main__':
     # initialize node and name it
