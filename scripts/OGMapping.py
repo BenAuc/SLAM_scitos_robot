@@ -319,8 +319,10 @@ class OGMapping:
         #     self.occ_grid_map.updatemap(self.scan_msg.ranges, self.scan_msg.angle_min, self.scan_msg.angle_max,
         #                                 self.scan_msg.angle_increment, self.scan_msg.range_min, self.scan_msg.range_max,
         #                                 self.robot_pose, self.robot_yaw)
-
-        self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
+        if self.scan_msg and self.odom_msg:
+            self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
+            if self.robot_pose: # update map only if odometry data available
+                self.occ_grid_map.updatemap(self.scan_msg.ranges, self.scan_msg.angle_min, self.scan_msg.angle_max, self.scan_msg.angle_increment, self.scan_msg.range_min, self.scan_msg.range_max, self.robot_pose, self.robot_yaw)
 
 
     def odometryCallback(self, data):
@@ -351,9 +353,9 @@ class OGMapping:
         @result: internal update of the map using the occ_grid_map class
         """
         self.scan_msg = data
-        # print(type(data.ranges)) # returned tuple
-        if self.robot_pose: # update map only if odometry data available
-            self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
+        # # print(type(data.ranges)) # returned tuple
+        # if self.robot_pose: # update map only if odometry data available
+        #     self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
 
 
 
