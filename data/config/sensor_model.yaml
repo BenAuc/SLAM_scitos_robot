@@ -1,5 +1,5 @@
 ### sensor model parameters ###
 
-tau: 0.1 # [m]
+tau: 0.05 # [m]
 r_prob: 0.8 # [m]
 below_r_prob: 0.2 # [m]

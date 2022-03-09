@@ -81,7 +81,8 @@ class OGMap:
 
 #############################################
         # debugging
-        self.grid.data = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
+        # self.grid.data = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
+        self.grid.data = None
 
         ### define probabilities for Bayesian belief update ###
         ### get sensor model ###
@@ -96,10 +97,10 @@ class OGMap:
         ### initialize occupancy and logodd grid variables ###
         # grid_map is stored as log-odds
         # 50% chances of each cell being occupied amounts to log(0.5) = 0 hence initialization to 0
-        self.prob_map = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)]).flatten().astype(np.int8)
+        self.prob_map = -1 * np.ones([int(self.height / self.resolution), int(self.width / self.resolution)])
+        self.logodds_map = np.zeros([int(self.height / self.resolution), int(self.width / self.resolution)])
 
         ### initialize auxillary variables ###
-
 
 
     def updatemap(self,laser_scan,angle_min,angle_max,angle_increment,range_min,range_max,robot_pose, yaw):
@@ -121,6 +122,8 @@ class OGMap:
         robot_pos_grid = world_to_grid(robot_pose[0], robot_pose[1],
                                         self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
+        print("robot_pos_grid = {}".format(robot_pos_grid))
+
         ### for all rays in the laser scan do: ###
         for idx_range, measured_range in enumerate(laser_scan):
 
@@ -133,10 +136,15 @@ class OGMap:
             # grid coordinates ###
 
             # compute yaw angle of laser beam
-            theta = yaw + angle_min + idx_range * angle_increment
+            theta = yaw - angle_min - idx_range * angle_increment
             # I think it should be
             # theta = yaw - angle_min - idx_range*angle_increment
             # if theta is angle in world coor. from x axis towards y axis.
+
+            print("current yaw D = {}".format(yaw))
+            print("current theta D = {}".format(theta))
+            print("angle_min D = {}".format(angle_min))
+            print("angle_increment D = {}".format(angle_increment))
 
             # convert (measured range - uncertainty per sensor model) into world coordinates
             delta_x = (measured_range - self.tau) * np.cos(theta)
@@ -157,82 +165,54 @@ class OGMap:
             ### define a line from laser ray point to robot pose
             # in grid coordinates(for example with bresenham) ###
             non_occupied_cells = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_minus_tau[0], target_minus_tau[1])
+            # get rid of the first cell in the list because it is also listed as an occupied cell
+            non_occupied_cells.pop(-1)
             print("current set of non-occupied cells = {}".format(non_occupied_cells))
             occupied_cells = bresenham(target_minus_tau[0], target_minus_tau[1], target_plus_tau[0], target_plus_tau[1])
             print("current set of occupied cells = {}".format(occupied_cells))
 
-            ### update logoods array for indices of points along the laser line with either
-            # free or occupied probabilities. ###
-            first = True
-            need_sorting_out = True
+            # process list of non-occupied cells
+            for cell in non_occupied_cells:
+                print("current cell = {}".format(cell))
+                # first column in the array runs along y-axis
+                x = cell[0]
+                # last row in the array runs along x-axis
+                # y = cell[1]
+                y = -1 * cell[1]
 
-            # we start with the coordinates of the target itself and process the inverted list
-            cells_not_occupied = non_occupied_cells.copy()
+                self.cellUpdate(x, y, self.odds_below_r_prob)
 
-            for cell in reversed(non_occupied_cells):
-
+            # update occupied cells
+            for cell in occupied_cells:
+                print("current cell = {}".format(cell))
                 # first column in the array runs along y-axis
                 x = cell[0]
                 # last row in the array runs along x-axis
                 y = -1 * cell[1]
+                self.cellUpdate(x, y, self.odds_r_prob)
 
-                # the first cell in the reversed list of non-occupied cells is the same as the first cell
-                # in the list of occupied cells
-                if first:
-                    for item in enumerate(occupied_cells):
+    def cellUpdate(self, x, y, logodds_update):
 
-                        # if the cell is also in the list of occupied cells it is deemed occupied
-                        if cell == item:
+        # print("x in grid = {}".format(x))
+        # print("y in grid = {}".format(y))
+        # print("shape of map = {}".format(self.prob_map.shape))
 
-                            # transform current probability of occupancy into logodds representation
-                            print("current probability is: {}".format(self.prob_map[y][x]))
-                            if self.prob_map[y][x] == -1:
-                                prior_belief = 0
-                            else:
-                                prior_belief = np.log(self.prob_map[y][x] / (1 - self.prob_map[y][x]))
-                            # perform the update
-                            posterior_belief = prior_belief + self.odds_r_prob
-                            # return to probabilistic representation
-                            self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
-                            print("updated probability is: {}".format(self.prob_map[y][x]))
+        # if the cell had not been observed so far we set the prior on it to 0.5
+        print("current probability is: {}".format(self.prob_map[y][x]))
+        if self.prob_map[y][x] == -1:
+            self.prob_map[y][x] = 0.5
 
-                            # remove updated cell from the list of occupied cells
-                            occupied_cells.remove(item)
-                            first = False
-                            break
+        # perform the update
+        prior_belief = self.logodds_map[y][x]
+        posterior_belief = prior_belief + logodds_update
+        self.logodds_map[y][x] = posterior_belief
 
-                # if the cell is not in the uncertainty range around the reading it is deemed not occupied
-                else:
-
-                    print("current probability is: {}".format(self.prob_map[y][x]))
-                    if self.prob_map[y][x] == -1:
-                        prior_belief = 0
-                    else:
-                        prior_belief = np.log(self.prob_map[y][x] / (1 - self.prob_map[y][x]))
-                    # perform the update
-                    posterior_belief = prior_belief + self.odds_below_r_prob
-                    # return to probabilistic representation
-                    self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
-                    print("updated probability is: {}".format(self.prob_map[y][x]))
-
-            # update remaining occupied cells
-            for cell in enumerate(occupied_cells):
-
-                # first column in the array runs along y-axis
-                x = cell[0]
-                # last row in the array runs along x-axis
-                y = -1 * cell[1]
-
-                print("current probability is: {}".format(self.prob_map[y][x]))
-                if self.prob_map[y][x] == -1:
-                    prior_belief = 0
-                else:
-                    prior_belief = np.log(self.prob_map[y][x] / (1 - self.prob_map[y][x]))
-                # perform the update
-                posterior_belief = prior_belief + self.odds_r_prob
-                # return to probabilistic representation
-                self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
-                print("updated probability is: {}".format(self.prob_map[y][x]))
+        # return to probabilistic representation
+        self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
+        print("current prior_belief logodds: {}".format(prior_belief))
+        print("current update: {}".format(logodds_update))
+        print("current posterior_belief logodds: {}".format(posterior_belief))
+        print("updated probability is: {}".format(self.prob_map[y][x]))
 
     def returnMap(self):
         """returns latest map as OccupancyGrid object
@@ -245,6 +225,7 @@ class OGMap:
         #############################################
         # debugging
         # scale between 0 and 100 only the cells that have been visited
+        print("##########################################################################################")
         scaled_prob = self.prob_map.copy()
         scaled_prob[scaled_prob > 0] *= 100
         print("Here's the map : {}".format(scaled_prob))
@@ -276,7 +257,7 @@ class OGMapping:
         self.rate = rospy.Rate(10)
 
         ### subscribers ###
-        self.pose_sub = rospy.Subscriber("/ground_truth", Odometry, callback= self.odometryCallback)
+        self.pose_sub = rospy.Subscriber("/ground_truth", Odometry, self.odometryCallback)
         self.laserScan_sub = rospy.Subscriber("/laser_scan", LaserScan, self.laserScanCallback)
         
         ### publishers ###
@@ -318,8 +299,12 @@ class OGMapping:
         while not rospy.is_shutdown():
             ### step only when odometry and laser data are available ###
             if self.scan_msg and self.odom_msg:
-                # print("publishing map")
+                print("publishing map")
                 self.step()
+
+            # sleep for
+            # cycle = 5000
+            # for step in range(cycle):
             self.rate.sleep()
 
     def step(self):
@@ -329,8 +314,9 @@ class OGMapping:
         @result: updates the map information and publishes new map data
         """
         # self.occ_grid_map.updatemap(..., self.robot_pose)
+        print("##########################################################################################")
         self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
-        pass
+        # pass
 
     def odometryCallback(self, data):
         """
