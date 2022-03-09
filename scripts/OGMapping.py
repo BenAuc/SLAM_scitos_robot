@@ -28,6 +28,7 @@ from coordinate_transformations import world_to_grid, grid_to_world
 from bresenham import bresenham
 
 
+
 class OGMap:
     """
     Map class which translates the laser ranges into grid cell
@@ -123,11 +124,11 @@ class OGMap:
                                         self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
         print("robot_pos_grid = {}".format(robot_pos_grid))
-
+        print(robot_pose)
         ### for all rays in the laser scan do: ###
         for idx_range, measured_range in enumerate(laser_scan):
 
-            print("currently processing range D = {}".format(measured_range))
+            # print("currently processing range D = {}".format(measured_range))
             # discard the measured range if outside of allowed range
             if measured_range < range_min or measured_range > range_max:
                 continue
@@ -136,15 +137,16 @@ class OGMap:
             # grid coordinates ###
 
             # compute yaw angle of laser beam
-            theta = yaw - angle_min - idx_range * angle_increment
+            theta = yaw + angle_min + idx_range * angle_increment
             # I think it should be
             # theta = yaw - angle_min - idx_range*angle_increment
             # if theta is angle in world coor. from x axis towards y axis.
+            # angle_min is -pi/2, angle_max is pi/2
 
-            print("current yaw D = {}".format(yaw))
-            print("current theta D = {}".format(theta))
-            print("angle_min D = {}".format(angle_min))
-            print("angle_increment D = {}".format(angle_increment))
+            # print("current yaw D = {}".format(yaw))
+            # print("current theta D = {}".format(theta))
+            # print("angle_min D = {}".format(angle_min))
+            # print("angle_increment D = {}".format(angle_increment))
 
             # convert (measured range - uncertainty per sensor model) into world coordinates
             delta_x = (measured_range - self.tau) * np.cos(theta)
@@ -163,34 +165,35 @@ class OGMap:
                                                  self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
 
             ### define a line from laser ray point to robot pose
-            # in grid coordinates(for example with bresenham) ###
-            non_occupied_cells = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_minus_tau[0], target_minus_tau[1])
-            # get rid of the first cell in the list because it is also listed as an occupied cell
-            non_occupied_cells.pop(-1)
-            print("current set of non-occupied cells = {}".format(non_occupied_cells))
-            occupied_cells = bresenham(target_minus_tau[0], target_minus_tau[1], target_plus_tau[0], target_plus_tau[1])
-            print("current set of occupied cells = {}".format(occupied_cells))
+            if target_minus_tau and target_plus_tau:
+                # in grid coordinates(for example with bresenham) ###
+                non_occupied_cells = bresenham(robot_pos_grid[0], robot_pos_grid[1], target_minus_tau[0], target_minus_tau[1])
+                # get rid of the first cell in the list because it is also listed as an occupied cell
+                non_occupied_cells.pop(-1)
+                # print("current set of non-occupied cells = {}".format(non_occupied_cells))
+                occupied_cells = bresenham(target_minus_tau[0], target_minus_tau[1], target_plus_tau[0], target_plus_tau[1])
+                # print("current set of occupied cells = {}".format(occupied_cells))
 
-            # process list of non-occupied cells
-            for cell in non_occupied_cells:
-                print("current cell = {}".format(cell))
-                # first column in the array runs along y-axis
-                x = cell[0]
-                # last row in the array runs along x-axis
-                y = cell[1]
-                # y = -1 * cell[1]
+                # process list of non-occupied cells
+                for cell in non_occupied_cells:
+                    # print("current cell = {}".format(cell))
+                    # first column in the array runs along y-axis
+                    x = cell[0]
+                    # last row in the array runs along x-axis
+                    y = cell[1]
+                    # y = -1 * cell[1]
 
-                self.cellUpdate(x, y, self.odds_below_r_prob)
+                    self.cellUpdate(x, y, self.odds_below_r_prob)
 
-            # update occupied cells
-            for cell in occupied_cells:
-                print("current cell = {}".format(cell))
-                # first column in the array runs along y-axis
-                x = cell[0]
-                # last row in the array runs along x-axis
-                # y = -1 * cell[1]
-                y = cell[1]
-                self.cellUpdate(x, y, self.odds_r_prob)
+                # update occupied cells
+                for cell in occupied_cells:
+                    # print("current cell = {}".format(cell))
+                    # first column in the array runs along y-axis
+                    x = cell[0]
+                    # last row in the array runs along x-axis
+                    # y = -1 * cell[1]
+                    y = cell[1]
+                    self.cellUpdate(x, y, self.odds_r_prob)
 
     def cellUpdate(self, x, y, logodds_update):
 
@@ -199,7 +202,7 @@ class OGMap:
         # print("shape of map = {}".format(self.prob_map.shape))
 
         # if the cell had not been observed so far we set the prior on it to 0.5
-        print("current probability is: {}".format(self.prob_map[y][x]))
+        # print("current probability is: {}".format(self.prob_map[y][x]))
         if self.prob_map[y][x] == -1:
             self.prob_map[y][x] = 0.5
 
@@ -210,10 +213,10 @@ class OGMap:
 
         # return to probabilistic representation
         self.prob_map[y][x] = 1 - 1 / (1 + np.exp(posterior_belief))
-        print("current prior_belief logodds: {}".format(prior_belief))
-        print("current update: {}".format(logodds_update))
-        print("current posterior_belief logodds: {}".format(posterior_belief))
-        print("updated probability is: {}".format(self.prob_map[y][x]))
+        # print("current prior_belief logodds: {}".format(prior_belief))
+        # print("current update: {}".format(logodds_update))
+        # print("current posterior_belief logodds: {}".format(posterior_belief))
+        # print("updated probability is: {}".format(self.prob_map[y][x]))
 
     def returnMap(self):
         """returns latest map as OccupancyGrid object
@@ -226,10 +229,12 @@ class OGMap:
         #############################################
         # debugging
         # scale between 0 and 100 only the cells that have been visited
-        print("##########################################################################################")
+        print("###############################################")
+        
+        imshow(self.prob_map)
         scaled_prob = self.prob_map.copy()
         scaled_prob[scaled_prob > 0] *= 100
-        print("Here's the map : {}".format(scaled_prob))
+        # print("Here's the map : {}".format(scaled_prob))
         self.grid.data = scaled_prob.flatten().astype(np.int8)
         return self.grid
 
@@ -255,7 +260,7 @@ class OGMapping:
         """
         ### timing ###
         self.dt = dt
-        self.rate = rospy.Rate(10)
+        self.rate = rospy.Rate(20)
 
         ### subscribers ###
         self.pose_sub = rospy.Subscriber("/ground_truth", Odometry, self.odometryCallback)
@@ -283,7 +288,7 @@ class OGMapping:
         self.occ_grid_map = OGMap(self.height, self.width, self.resolution, self.map_origin,
                                   self.tau, self.r_prob, self.below_r_prob)
 
-        print("here's the map width: {}".format(self.occ_grid_map.width))
+        # print("here's the map width: {}".format(self.occ_grid_map.width))
 
         # define static components of occupancy grid to be published
         # --> not sure what this^ means?
