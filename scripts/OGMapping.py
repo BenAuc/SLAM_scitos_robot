@@ -230,8 +230,7 @@ class OGMap:
         # debugging
         # scale between 0 and 100 only the cells that have been visited
         print("###############################################")
-        
-        imshow(self.prob_map)
+    
         scaled_prob = self.prob_map.copy()
         scaled_prob[scaled_prob > 0] *= 100
         # print("Here's the map : {}".format(scaled_prob))
@@ -278,6 +277,9 @@ class OGMapping:
         self.height = rospy.get_param("/map/height")
         self.resolution = rospy.get_param("/map/resolution")
         self.map_origin = rospy.get_param("/map/origin")
+        
+        ### fet robot parameters ###
+        self.laserScaner_to_robotbase = rospy.get_param("/robot_parameters/laserscanner_pose")
 
         ### get sensor model ###
         self.tau = np.array(rospy.get_param("sensor_model/tau"))
@@ -295,6 +297,7 @@ class OGMapping:
 
         ### initialization of class variables ###
         self.robot_pose = None
+        self.laserscanner_pose = None
 
     def run(self):
         """
@@ -328,7 +331,7 @@ class OGMapping:
         if self.scan_msg and self.odom_msg:
             self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
             if self.robot_pose: # update map only if odometry data available
-                self.occ_grid_map.updatemap(self.scan_msg.ranges, self.scan_msg.angle_min, self.scan_msg.angle_max, self.scan_msg.angle_increment, self.scan_msg.range_min, self.scan_msg.range_max, self.robot_pose, self.robot_yaw)
+                self.occ_grid_map.updatemap(self.scan_msg.ranges, self.scan_msg.angle_min, self.scan_msg.angle_max, self.scan_msg.angle_increment, self.scan_msg.range_min, self.scan_msg.range_max, self.laserscanner_pose, self.robot_yaw)
 
 
     def odometryCallback(self, data):
@@ -348,6 +351,10 @@ class OGMapping:
         # print(self.robot_yaw)
         # theta = euler_from_quaternion(np.array(data.pose.pose.orientation))
         self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
+        T_mat = np.array([[np.cos(self.robot_yaw), -np.sin(self.robot_yaw)],
+                          [np.sin(self.robot_yaw), np.cos(self.robot_yaw)]])
+        self.laserscanner_pose = [self.robot_pose[0] + np.cos(self.robot_yaw)*self.laserScaner_to_robotbase[0],
+                                  self.robot_pose[1] + np.sin(self.robot_yaw)*self.laserScaner_to_robotbase[0]]
         
         pass
 
