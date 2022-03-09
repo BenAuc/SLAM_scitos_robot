@@ -313,10 +313,15 @@ class OGMapping:
         @param: self
         @result: updates the map information and publishes new map data
         """
-        # self.occ_grid_map.updatemap(..., self.robot_pose)
         print("##########################################################################################")
+
+        # if self.scan_msg and self.odom_msg:
+        #     self.occ_grid_map.updatemap(self.scan_msg.ranges, self.scan_msg.angle_min, self.scan_msg.angle_max,
+        #                                 self.scan_msg.angle_increment, self.scan_msg.range_min, self.scan_msg.range_max,
+        #                                 self.robot_pose, self.robot_yaw)
+
         self.map_pub.publish(self.occ_grid_map.returnMap()) # uncomment here
-        # pass
+
 
     def odometryCallback(self, data):
         """
@@ -349,7 +354,7 @@ class OGMapping:
         # print(type(data.ranges)) # returned tuple
         if self.robot_pose: # update map only if odometry data available
             self.occ_grid_map.updatemap(data.ranges, data.angle_min, data.angle_max, data.angle_increment, data.range_min, data.range_max, self.robot_pose, self.robot_yaw)
-        pass
+
 
 
 if __name__ == '__main__':
