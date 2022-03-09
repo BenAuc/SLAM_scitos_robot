@@ -2,7 +2,7 @@
 <launch>
     <!--include other launch files-->
     <include file="$(find ias0060_scitos_auclair_bryan_schneider)/launch/scitos.launch">
-        <arg name="gui" value="false"/> <!--change here-->
+        <arg name="gui" value="true"/> <!--change here-->
         <arg name="headless" value="false"/>
     </include>
 
@@ -25,13 +25,9 @@
     <node name="MappingNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="OGMapping.py"
 	output="screen" respawn="true"/>
 
-<!-- 	<node name="map_server" pkg="map_server" type="map_server"> -->
-<!--     <param name="frame_id" value="odometry_link" /> -->
-<!--     </node> -->
-
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find ias0060_scitos_auclair_bryan_schneider)/data/config/rviz/scitos_mapping.rviz" /> -->
 
     <node pkg="tf2_ros" type="static_transform_publisher" name="link1_broadcaster" args="0 0 0 0 0 0 1 map odom" />
-<!--         <node pkg="tf2_ros" type="static_transform_publisher" name="link1_broadcaster" args="0 0 0 0 0 0 0 link1_parent link1" /> -->
+
 
 </launch>
