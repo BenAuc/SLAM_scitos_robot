@@ -177,8 +177,8 @@ class OGMap:
                 # first column in the array runs along y-axis
                 x = cell[0]
                 # last row in the array runs along x-axis
-                # y = cell[1]
-                y = -1 * cell[1]
+                y = cell[1]
+                # y = -1 * cell[1]
 
                 self.cellUpdate(x, y, self.odds_below_r_prob)
 
@@ -188,7 +188,8 @@ class OGMap:
                 # first column in the array runs along y-axis
                 x = cell[0]
                 # last row in the array runs along x-axis
-                y = -1 * cell[1]
+                # y = -1 * cell[1]
+                y = cell[1]
                 self.cellUpdate(x, y, self.odds_r_prob)
 
     def cellUpdate(self, x, y, logodds_update):
