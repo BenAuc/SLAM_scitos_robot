@@ -4,4 +4,6 @@
 .vscode
 .test_scripts
 
+# cache
+__pycache__
 # log files?

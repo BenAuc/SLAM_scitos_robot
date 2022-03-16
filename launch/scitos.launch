@@ -1,5 +1,6 @@
 <?xml version="1.0"?>
 <launch>
+    <env name="GAZEBO_MODEL_PATH" value="$(find ias0060_scitos_auclair_bryan_schneider)/data:$(optenv GAZEBO_MODEL_PATH)"/>
     <arg name="paused" default="false"/>
     <arg name="use_sim_time" default="true"/>
     <arg name="gui" default="true"/>
@@ -13,6 +14,7 @@
         <arg name="gui" value="$(arg gui)" />
         <arg name="headless" default="$(arg headless)" />
         <arg name="debug" value="$(arg debug)" />
+        <arg name="world_name" value="$(find ias0060_scitos_auclair_bryan_schneider)/data/worlds/test_world.sdf"/>
    </include>
 
     <!-- Load the URDF into ROS parameter server -->
@@ -24,21 +26,8 @@
     <!-- convert joint states to TF transforms for rviz, etc  -->
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
 
-    <!-- Load parameters from yaml files into specified namespaces -->
-    <rosparam command="load"
-        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/joints.yaml"
-        ns="controller_joints" />
-    <rosparam command="load"
-        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/diffdrive.yaml"
-        ns="controller_diffdrive" />
-
     <!-- Spawn model -->
     <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
         args="-urdf -x 0 -y 0 -z 0  -model SCITOS_G5 -param robot_description"/>
-
-    <!-- Spawn the controllers -->
-    <node name="controller_spawner" pkg="controller_manager" type="spawner"
-        args="controller_joints
-          controller_diffdrive" />
 
 </launch>

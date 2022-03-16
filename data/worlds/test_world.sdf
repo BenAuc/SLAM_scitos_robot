@@ -1,0 +1,13 @@
+<sdf version="1.4">
+    <world name="default">
+        <include>
+            <uri>model://ground_plane</uri>
+        </include>
+        <include>
+            <uri>model://sun</uri>
+        </include>
+        <include>
+            <uri>model://worlds</uri>
+        </include>
+    </world>
+</sdf>
