@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<launch>
+    <!--include other launch files-->
+    <include file="$(find ias0060_scitos_auclair_bryan_schneider)/launch/scitos.launch">
+        <arg name="gui" value="true"/> <!--change here-->
+        <arg name="headless" value="false"/>
+    </include>
+
+    <!-- Load yaml file containing map metadata to ros parameter server
+    <rosparam command="load"
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map.yaml"
+        ns="/map"/>-->
+
+    <!-- Load yaml file containing sensor model to ros parameter server
+    <rosparam command="load"
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/sensor_model.yaml"
+        ns="/sensor_model"/>-->
+
+    <!-- Load yaml file containing sensor model to ros parameter server-->
+    <rosparam command="load"
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/robot_parameters.yaml"
+        ns="/robot_parameters"/>
+
+    <!--launch Localization node-->
+    <node name="LocalizationNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="Localization.py"
+	output="screen" respawn="true"/>
+
+    <node type="rviz" name="rviz" pkg="rviz" args="-d $(find ias0060_scitos_auclair_bryan_schneider)/data/config/rviz/scitos_localization.rviz" /> -->
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="link1_broadcaster" args="0 0 0 0 0 0 1 map odom" />
+
+
+</launch>

@@ -1,2 +1,2 @@
 # Laser scanner
-laserscanner_pose: [0.24, 0, 0.3]
+laserscanner_pose: [0.24, 0, 0.3] # [x, y, z]
