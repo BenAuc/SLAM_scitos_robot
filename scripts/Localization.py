@@ -28,25 +28,109 @@ from std_msgs.msg import Header
 # from coordinate_transformations import world_to_grid
 # from bresenham import bresenham
 
+class NoiseModel:
+    """
+    Class called by the main node
+    """
+
+    def __init__(self):
+        """
+        Function that ...
+        @param: TBD
+        @result: TBD
+        """
+        #TO DO: pick value for each parameter alpha
+        self.alpha1 = 0
+        self.alpha2 = 0
+        self.alpha3 = 0
+        self.alpha4 = 0
+        self.error = np.array([self.alpha1, self.alpha2, self.alpha3, self.alpha4])
+
+class MotionModel:
+    """
+    Class implementing the motion model for the robot
+    """
+
+    def __init__(self,dt,initial_pose):
+        """
+        Function that ...
+        @param: TBD
+        @result: TBD
+        """
+        ### class arguments
+        # time step
+        self.dt = dt
+        self.last_pose = initial_pose
+        self.next_pose = np.zeros((3, 1))
+
+        self.noise_model = NoiseModel()
+        self.error_model = self.noise_model.error
+        #NOTE: let's start debugging with an error equals to null
+        self.error = 0
+
+    def updatePose(self, control_input):
+        """
+        This method updates the predicted robot pose.
+        @param: control_input - numpy array of dim 1 x 2 containing:
+            *linear speed w.r.t. x-axis in robot frame
+            *angular speed w.r.t. z-axis in robot frame
+        @result: returns: predicted pose, estimated error
+        """
+        self.last_pose = self.next_pose
+        v = control_input[0]
+        w = control_input[1]
+
+        increment = np.array([[v * self.dt * np.cos(self.last_pose[2] + w * self.dt / 2)],
+                             [v * self.dt * np.sin(self.last_pose[2] + w * self.dt / 2)],
+                             [w * self.dt]])
+        self.next_pose = self.last_pose + increment
+
+        #NOTE: let's start debugging without any error
+        # self.updateErrorModel(v, w)
+
+        return self.next_pose, self.error_model
+
+    def updateErrorModel(self, v, w):
+        """
+        This method updates the predicted robot pose.
+        @param: control_input - numpy array of dim 1 x 2 containing:
+            *linear speed w.r.t. x-axis in robot frame
+            *angular speed w.r.t. z-axis in robot frame
+        @result: update of error model
+        """
+
+        # Taylor expansion of non-linear noise model
+        self.error = np.array([[2 * self.error_model[0] * v + 2 * self.error_model[1] * w, 0],
+                                [0, 2 * self.error_model[2] * v + 2 * self.error_model[3] * w]])
+
+
 class KalmanFilter:
     """
     Class called by the main node
     """
-    def __init__(self):
+    def __init__(self, dt):
         """
-        class initialization
-        @param: self
-        @param: height - map size along y-axis [m]
-        @param: width - map size along x-axis [m]
-        @param: resolution - size of a grid cell [m]
-        @param: map_origin - origin in real world [m, m]
-        @param: reading probability
-        @param: below reading probability
-        @param: tau - depth of the reading point
-        @result: initializes occupancy grid variable and
-                 logg odds variable based on sensor model
+        Function that ...
+        @param: TBD
+        @result: TBD
         """
-      
+        ### class arguments
+        # TO DO: needs to be initialized with the first reading of the pose
+        self.pose = None
+        self.dt = dt
+        self.motion_model = MotionModel(self.dt, self.pose)
+        self.odom_error_model = self.motion_model.error_model
+
+        # TO DO: needs to be initialized with a value TBD
+        self.last_state = None
+        self.last_covariance = None
+
+        self.next_state = None
+        self.next_covariance = None
+
+        self.jacobian_G = None
+        self.jacobian_V = None
+
         # ### declaration of Occupancy Grid message
         # self.grid = OccupancyGrid()
         # self.grid.info = self.map_meta_data
@@ -54,17 +138,27 @@ class KalmanFilter:
         # self.grid.header.frame_id = "map"
         # self.grid.data = None
 
-    def update(self):
+    def predict(self, control_input):
         """
-        Function that updates the occupancy grid based on the laser scan ranges.
-        The logodds formulation of the Bayesian belief update is used
-        @param: laser_scan - range data from the laser range finder
-        @param: angle_min, angle_max - boundaries of the circular arc of the laser ranges
-        @param: angle_increment - angular step between consecutive laser rays
-        @param: range_min, range_max - min and max distances at which the laser range finder can detect an obstacle
-        @param: robot_pose - the planar robot pose in world coordinates
-        @result: updates the list of occupancy cells based on occupancy probabilities ranging from [0,100]
+        This method predicts what the next system state will be.
+        @param: control_input - numpy array of dim 1 x 2 containing:
+            *linear speed w.r.t. x-axis in robot frame
+            *angular speed w.r.t. z-axis in robot frame
+        @result:
+            *next_state - numpy array of dim 3 x 1 containing the 3 tracked variables
+            *next_covariance - numpy array of dim 3 x 3 containing covariance matrix
         """
+        self.next_state, error_model = self.motion_model.updatePose(control_input)
+
+        self.computeJacobian(control_input)
+        self.next_covariance = self.jacobian_G @ self.last_covariance @ self.jacobian_G.T + \
+                               self.jacobian_V @ error_model @ self.jacobian_V.T
+
+
+    def computeJacobian(self, control_input):
+
+        pass
+
 
 
 class Localization:
@@ -101,7 +195,7 @@ class Localization:
         # self.map_origin = rospy.get_param("/map/origin")
         
         ### initialize KF class ###
-        self.kalman_filter = KalmanFilter()
+        self.kalman_filter = KalmanFilter(self.dt)
 
         ### initialization of class variables ###
         self.robot_pose = None
