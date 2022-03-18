@@ -40,18 +40,37 @@ class NoiseModel:
         @result: TBD
         """
         #TO DO: pick value for each parameter alpha
+        # at the beginning let's debug with an error that's null
         self.alpha1 = 0
         self.alpha2 = 0
         self.alpha3 = 0
         self.alpha4 = 0
-        self.error = np.array([self.alpha1, self.alpha2, self.alpha3, self.alpha4])
+        self.next_error = 0
+
+    def getError(self, v, w):
+        """
+        This method updates the predicted robot pose.
+        @param: 2 measurements for which there is a level of uncertainty
+            v: linear speed w.r.t. x-axis in robot frame
+            w: angular speed w.r.t. z-axis in robot frame
+        @result: update of estimated error on the measurements in a 2 x 2 numpy array containing the covariance matrix
+        """
+
+        # Taylor expansion of non-linear noise model
+        # where alpha * w^2 = 2 * alpha * w
+        # As far as I can tell this is what we have to do
+        self.next_error = np.array([[2 * self.alpha1 * v + 2 * self.alpha2 * w, 0],
+                                    [0, 2 * self.alpha3 * v + 2 * self.alpha4 * w]])
+
+        return self.next_error
+
 
 class MotionModel:
     """
     Class implementing the motion model for the robot
     """
 
-    def __init__(self,dt,initial_pose):
+    def __init__(self, dt, initial_pose):
         """
         Function that ...
         @param: TBD
@@ -64,19 +83,22 @@ class MotionModel:
         self.next_pose = np.zeros((3, 1))
 
         self.noise_model = NoiseModel()
-        self.error_model = self.noise_model.error
+        self.next_error = 0
         #NOTE: let's start debugging with an error equals to null
         self.error = 0
 
     def updatePose(self, control_input):
         """
         This method updates the predicted robot pose.
-        @param: control_input - numpy array of dim 1 x 2 containing:
+        @param: control_input - numpy array of dim 2 x 1 containing:
             *linear speed w.r.t. x-axis in robot frame
             *angular speed w.r.t. z-axis in robot frame
-        @result: returns: predicted pose, estimated error
+        @result: returns:
+            *predicted pose in a 3 x 1 numpy array containing x, y, psi
+            *estimated error on the control inputs in a 2 x 2 numpy array containing the covariance matrix
         """
         self.last_pose = self.next_pose
+
         v = control_input[0]
         w = control_input[1]
 
@@ -86,22 +108,10 @@ class MotionModel:
         self.next_pose = self.last_pose + increment
 
         #NOTE: let's start debugging without any error
-        # self.updateErrorModel(v, w)
+        # self.next_error has been intialized to 0
+        # self.next_error = self.noise_model(v, w)
 
-        return self.next_pose, self.error_model
-
-    def updateErrorModel(self, v, w):
-        """
-        This method updates the predicted robot pose.
-        @param: control_input - numpy array of dim 1 x 2 containing:
-            *linear speed w.r.t. x-axis in robot frame
-            *angular speed w.r.t. z-axis in robot frame
-        @result: update of error model
-        """
-
-        # Taylor expansion of non-linear noise model
-        self.error = np.array([[2 * self.error_model[0] * v + 2 * self.error_model[1] * w, 0],
-                                [0, 2 * self.error_model[2] * v + 2 * self.error_model[3] * w]])
+        return self.next_pose, self.next_error
 
 
 class KalmanFilter:
@@ -121,44 +131,57 @@ class KalmanFilter:
         self.motion_model = MotionModel(self.dt, self.pose)
         self.odom_error_model = self.motion_model.error_model
 
-        # TO DO: needs to be initialized with a value TBD
-        self.last_state = None
-        self.last_covariance = None
+        # TO DO: needs to be initialized with a value
+        # we might need to figure out where in the sequence we initialize them
+        self.last_state = np.zeros((3, 1))
+        self.last_covariance = np.zeros((3, 3))
+        self.last_control_input = np.zeros((2, 1))
 
-        self.next_state = None
-        self.next_covariance = None
+        self.jacobian_G = np.zeros((3, 3))
+        self.jacobian_V = np.zeros((3, 2))
 
-        self.jacobian_G = None
-        self.jacobian_V = None
+        self.next_state = np.zeros((3, 1))
+        self.next_covariance = np.zeros((3, 3))
 
-        # ### declaration of Occupancy Grid message
-        # self.grid = OccupancyGrid()
-        # self.grid.info = self.map_meta_data
-        # self.grid.header = Header()
-        # self.grid.header.frame_id = "map"
-        # self.grid.data = None
 
     def predict(self, control_input):
         """
         This method predicts what the next system state will be.
-        @param: control_input - numpy array of dim 1 x 2 containing:
-            *linear speed w.r.t. x-axis in robot frame
-            *angular speed w.r.t. z-axis in robot frame
+        @param: control_input - numpy array of dim 2 x 1 containing:
+            *linear speed w.r.t. x-axis in robot frame, v
+            *angular speed w.r.t. z-axis in robot frame, w
         @result:
-            *next_state - numpy array of dim 3 x 1 containing the 3 tracked variables
-            *next_covariance - numpy array of dim 3 x 3 containing covariance matrix
+            *next_state - numpy array of dim 3 x 1 containing the 3 tracked variables (x,y,psi)
+            *next_covariance - numpy array of dim 3 x 3 containing the covariance matrix
         """
-        self.next_state, error_model = self.motion_model.updatePose(control_input)
+        self.last_state = self.next_state
+        self.next_state, next_error = self.motion_model.updatePose(control_input)
 
         self.computeJacobian(control_input)
         self.next_covariance = self.jacobian_G @ self.last_covariance @ self.jacobian_G.T + \
-                               self.jacobian_V @ error_model @ self.jacobian_V.T
+                               self.jacobian_V @ next_error @ self.jacobian_V.T
+
+        self.last_control_input = control_input
+
+        return self.next_state, self.next_covariance
 
 
     def computeJacobian(self, control_input):
 
-        pass
+        delta_g = self.next_state - self.last_state
+        delta_x = self.next_state[0] - self.last_state[0]
+        delta_y = self.next_state[1] - self.last_state[1]
+        delta_psi = self.next_state[2] - self.last_state[2]
 
+        self.jacobian_G[0, :] = delta_g / delta_x
+        self.jacobian_G[1, :] = delta_g / delta_y
+        self.jacobian_G[2, :] = delta_g / delta_psi
+
+        delta_v = control_input[0] - self.last_control_input[0]
+        delta_w = control_input[1] - self.last_control_input[1]
+
+        self.jacobian_V[0, :] = delta_g / delta_v
+        self.jacobian_V[1, :] = delta_g / delta_w
 
 
 class Localization:
