@@ -116,7 +116,7 @@ class MotionModel:
 
 class KalmanFilter:
     """
-    Class called by the main node
+    Class called by the main node and which implements the Kalman Filter
     """
     def __init__(self, dt):
         """
@@ -139,6 +139,7 @@ class KalmanFilter:
 
         self.jacobian_G = np.zeros((3, 3))
         self.jacobian_V = np.zeros((3, 2))
+        self.threshold_div_zero = 1e-6
 
         self.next_state = np.zeros((3, 1))
         self.next_covariance = np.zeros((3, 3))
@@ -150,7 +151,7 @@ class KalmanFilter:
         @param: control_input - numpy array of dim 2 x 1 containing:
             *linear speed w.r.t. x-axis in robot frame, v
             *angular speed w.r.t. z-axis in robot frame, w
-        @result:
+        @result: the method returns:
             *next_state - numpy array of dim 3 x 1 containing the 3 tracked variables (x,y,psi)
             *next_covariance - numpy array of dim 3 x 3 containing the covariance matrix
         """
@@ -167,21 +168,49 @@ class KalmanFilter:
 
 
     def computeJacobian(self, control_input):
+        """
+        This method computes the Jacobians of the kinematic model.
+        @param: control_input - numpy array of dim 2 x 1 containing:
+            *linear speed w.r.t. x-axis in robot frame, v
+            *angular speed w.r.t. z-axis in robot frame, w
+        @result:
+            *self.jacobian_G: Jacobian with respect to the state estimate
+            *self.jacobian_V: Jacobian with respect to the control inputs
+        """
 
         delta_g = self.next_state - self.last_state
         delta_x = self.next_state[0] - self.last_state[0]
         delta_y = self.next_state[1] - self.last_state[1]
         delta_psi = self.next_state[2] - self.last_state[2]
 
-        self.jacobian_G[:, 0] = delta_g / delta_x
-        self.jacobian_G[:, 1] = delta_g / delta_y
-        self.jacobian_G[:, 2] = delta_g / delta_psi
+        # we should make sure we don't divide by zero
+        if delta_x > self.threshold_div_zero:
+            self.jacobian_G[:, 0] = delta_g / delta_x
+        else:
+            self.jacobian_G[:, 0] = delta_g / self.threshold_div_zero
+
+        if delta_y > self.threshold_div_zero:
+            self.jacobian_G[:, 1] = delta_g / delta_y
+        else:
+            self.jacobian_G[:, 1] = delta_g / self.threshold_div_zero
+
+        if delta_psi > self.threshold_div_zero:
+            self.jacobian_G[:, 2] = delta_g / delta_psi
+        else:
+            self.jacobian_G[:, 2] = delta_g / self.threshold_div_zero
 
         delta_v = control_input[0] - self.last_control_input[0]
         delta_w = control_input[1] - self.last_control_input[1]
 
-        self.jacobian_V[:, 0] = delta_g / delta_v
-        self.jacobian_V[:, 1] = delta_g / delta_w
+        if delta_v > self.threshold_div_zero:
+            self.jacobian_V[:, 0] = delta_g / delta_v
+        else:
+            self.jacobian_V[:, 0] = delta_g / self.threshold_div_zero
+
+        if delta_w > self.threshold_div_zero:
+            self.jacobian_V[:, 1] = delta_g / delta_w
+        else:
+            self.jacobian_V[:, 1] = delta_g / self.threshold_div_zero
 
 
 class Localization:
