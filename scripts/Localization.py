@@ -87,7 +87,7 @@ class MotionModel:
         #NOTE: let's start debugging with an error equals to null
         self.error = 0
 
-    def updatePose(self, control_input):
+    def predictPose(self, control_input):
         """
         This method updates the predicted robot pose.
         @param: control_input - numpy array of dim 2 x 1 containing:
@@ -155,7 +155,7 @@ class KalmanFilter:
             *next_covariance - numpy array of dim 3 x 3 containing the covariance matrix
         """
         self.last_state = self.next_state
-        self.next_state, next_error = self.motion_model.updatePose(control_input)
+        self.next_state, next_error = self.motion_model.predictPose(control_input)
 
         self.computeJacobian(control_input)
         self.next_covariance = self.jacobian_G @ self.last_covariance @ self.jacobian_G.T + \
@@ -173,15 +173,15 @@ class KalmanFilter:
         delta_y = self.next_state[1] - self.last_state[1]
         delta_psi = self.next_state[2] - self.last_state[2]
 
-        self.jacobian_G[0, :] = delta_g / delta_x
-        self.jacobian_G[1, :] = delta_g / delta_y
-        self.jacobian_G[2, :] = delta_g / delta_psi
+        self.jacobian_G[:, 0] = delta_g / delta_x
+        self.jacobian_G[:, 1] = delta_g / delta_y
+        self.jacobian_G[:, 2] = delta_g / delta_psi
 
         delta_v = control_input[0] - self.last_control_input[0]
         delta_w = control_input[1] - self.last_control_input[1]
 
-        self.jacobian_V[0, :] = delta_g / delta_v
-        self.jacobian_V[1, :] = delta_g / delta_w
+        self.jacobian_V[:, 0] = delta_g / delta_v
+        self.jacobian_V[:, 1] = delta_g / delta_w
 
 
 class Localization:
