@@ -164,7 +164,7 @@ class KalmanFilter:
 
         self.last_control_input = control_input
 
-        return self.next_state, self.next_covariance
+        ### to be continued
 
 
     def computeJacobian(self, control_input):
