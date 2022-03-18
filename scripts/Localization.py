@@ -68,7 +68,7 @@ class MotionModel:
     Class implementing the motion model for the robot
     """
 
-    def __init__(self):
+    def __init__(self, dt):
         """
         Function that ...
         @param: TBD
@@ -76,6 +76,7 @@ class MotionModel:
         """
         ### class arguments
         # time step
+        self.dt = dt
         self.next_pose = np.zeros((3, 1))
 
         self.noise_model = NoiseModel()
@@ -96,9 +97,9 @@ class MotionModel:
         v = control_input[0]
         w = control_input[1]
 
-        increment = np.array([[v * dt * np.cos(last_pose[2] + w * dt / 2)],
-                             [v * dt * np.sin(last_pose[2] + w * dt / 2)],
-                             [w * dt]])
+        increment = np.array([[v * self.dt * np.cos(last_pose[2] + w * self.dt / 2)],
+                             [v * self.dt * np.sin(last_pose[2] + w * self.dt / 2)],
+                             [w * self.dt]])
         self.next_pose = last_pose + increment
 
         #NOTE: let's start debugging without any error
@@ -120,7 +121,7 @@ class KalmanFilter:
         """
         ### class arguments
         self.dt = dt
-        self.motion_model = MotionModel()
+        self.motion_model = MotionModel(self.dt)
         self.odom_error_model = self.motion_model.error_model
 
         # TO DO: needs to be initialized with a value
@@ -152,7 +153,7 @@ class KalmanFilter:
         """
 
         # compute the next state i.e. next robot pose knowing current control inputs
-        self.next_state_mu, next_error = self.motion_model.predictPose(control_input, self.last_state_mu, self.dt)
+        self.next_state_mu, next_error = self.motion_model.predictPose(control_input, self.last_state_mu)
 
         # compute the jacobians necessary for the EKF prediction
         self.computeJacobian(control_input)
