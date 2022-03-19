@@ -187,9 +187,9 @@ class KalmanFilter:
         """
 
         delta_g = self.next_state_mu - self.last_state_mu
-        delta_x = self.next_state_mu[0] - self.last_state_mu[0]
-        delta_y = self.next_state_mu[1] - self.last_state_mu[1]
-        delta_psi = self.next_state_mu[2] - self.last_state_mu[2]
+        delta_x = self.next_state_mu[0, 0] - self.last_state_mu[0, 0]
+        delta_y = self.next_state_mu[1, 0] - self.last_state_mu[1, 0]
+        delta_psi = self.next_state_mu[2, 0] - self.last_state_mu[2, 0]
 
         # we should make sure we don't divide by zero
         if delta_x > self.threshold_div_zero:
