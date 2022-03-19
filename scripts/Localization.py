@@ -19,7 +19,7 @@ Date: March 17, 2022
 import numpy as np
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from geometry_msgs.msg import Pose, PoseStamped, Point
+from geometry_msgs.msg import Pose, PoseStamped, Point, Twist
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Header
 # from sensor_msgs.msg import LaserScan
@@ -84,7 +84,7 @@ class MotionModel:
         #NOTE: let's start debugging with an error equals to null
         self.error = 0
 
-    def predictPose(self, control_input, last_pose, dt):
+    def predictPose(self, control_input, last_pose):
         """
         This method updates the predicted robot pose.
         @param: control_input - numpy array of dim 2 x 1 containing:
@@ -96,7 +96,7 @@ class MotionModel:
         """
         v = control_input[0]
         w = control_input[1]
-
+        # M_t:
         increment = np.array([[v * self.dt * np.cos(last_pose[2] + w * self.dt / 2)],
                              [v * self.dt * np.sin(last_pose[2] + w * self.dt / 2)],
                              [w * self.dt]])
@@ -122,7 +122,7 @@ class KalmanFilter:
         ### class arguments
         self.dt = dt
         self.motion_model = MotionModel(self.dt)
-        self.odom_error_model = self.motion_model.error_model
+        # self.odom_error_model = self.motion_model.error_model
 
         # TO DO: needs to be initialized with a value
         # coming from ground truth
@@ -192,17 +192,17 @@ class KalmanFilter:
         delta_psi = self.next_state_mu[2, 0] - self.last_state_mu[2, 0]
 
         # we should make sure we don't divide by zero
-        if delta_x > self.threshold_div_zero:
+        if delta_x.all() > self.threshold_div_zero:
             self.jacobian_G[:, 0] = delta_g / delta_x
         else:
             self.jacobian_G[:, 0] = delta_g / self.threshold_div_zero
 
-        if delta_y > self.threshold_div_zero:
+        if delta_y.all() > self.threshold_div_zero:
             self.jacobian_G[:, 1] = delta_g / delta_y
         else:
             self.jacobian_G[:, 1] = delta_g / self.threshold_div_zero
 
-        if delta_psi > self.threshold_div_zero:
+        if delta_psi.all() > self.threshold_div_zero:
             self.jacobian_G[:, 2] = delta_g / delta_psi
         else:
             self.jacobian_G[:, 2] = delta_g / self.threshold_div_zero
@@ -210,12 +210,12 @@ class KalmanFilter:
         delta_v = control_input[0] - self.last_control_input[0]
         delta_w = control_input[1] - self.last_control_input[1]
 
-        if delta_v > self.threshold_div_zero:
+        if delta_v.all() > self.threshold_div_zero:
             self.jacobian_V[:, 0] = delta_g / delta_v
         else:
             self.jacobian_V[:, 0] = delta_g / self.threshold_div_zero
 
-        if delta_w > self.threshold_div_zero:
+        if delta_w.all() > self.threshold_div_zero:
             self.jacobian_V[:, 1] = delta_g / delta_w
         else:
             self.jacobian_V[:, 1] = delta_g / self.threshold_div_zero
@@ -244,10 +244,11 @@ class Localization:
         ### subscribers ###
         self.ground_truth_sub = rospy.Subscriber("/ground_truth", Odometry, self.groundTruthCallback)
         self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odometryCallback)
-        
+        self.control_input_sub = rospy.Subscriber("/cmd_vel", Twist, self.controlInputCallback)
+                                                  
         ### publishers ###
         self.pose_pub = rospy.Publisher("/robot_pose", PoseStamped, queue_size=1) # queue_size=1 => only the newest map available
-
+        
         ### get map parameters ###
         # self.width = rospy.get_param("/map/width")
         # self.height = rospy.get_param("/map/height")
@@ -255,12 +256,16 @@ class Localization:
         # self.map_origin = rospy.get_param("/map/origin")
         
         ### initialize KF class ###
-        self.kalman_filter = KalmanFilter(self.dt)
+        # could be initialized in first run of ground_truth callback
+        # now it should be  -x 0 -y 0 -z 0, see line 31 in scitos.launch
+        initial_pose = np.zeros((3,1)) 
+        self.kalman_filter = KalmanFilter(self.dt, initial_pose)
 
         ### initialization of class variables ###
         self.robot_pose = None
         self.odom_msg = None
         self.ground_truth_msg = None
+        self.control_input = np.zeros((2,1)) # [v, w]' 
 
     def run(self):
         """
@@ -280,6 +285,7 @@ class Localization:
         @param: self
         @result: updates 
         """
+        self.kalman_filter.predict(self.control_input)
         pass
 
     def odometryCallback(self, data):
@@ -311,6 +317,14 @@ class Localization:
         @result: internal update of ground truth
         """
         self.ground_truth_msg = data
+        
+    def controlInputCallback(self, data):
+        """
+        gets twist message from teleop_key.py
+        @param: Twist message
+        @result: control input ndarray
+        """
+        pass
 
 if __name__ == '__main__':
     # initialize node and name it
