@@ -255,7 +255,10 @@ class Localization:
         # self.map_origin = rospy.get_param("/map/origin")
         
         ### initialize KF class ###
-        self.kalman_filter = KalmanFilter(self.dt)
+        # could be initialized in first run of ground_truth callback
+        # now it should be  -x 0 -y 0 -z 0, see line 31 in scitos.launch
+        initial_pose = np.zeros((3,1)) 
+        self.kalman_filter = KalmanFilter(self.dt, initial_pose)
 
         ### initialization of class variables ###
         self.robot_pose = None
