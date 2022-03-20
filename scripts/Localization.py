@@ -100,7 +100,7 @@ class MotionModel:
         increment = np.array([[v * self.dt * np.cos(last_pose[2] + w * self.dt / 2)],
                              [v * self.dt * np.sin(last_pose[2] + w * self.dt / 2)],
                              [w * self.dt]], float)
-        self.next_pose = last_pose + increment.reshape(3,1) # was shape (3,1,1) which lead to (3,3,1)
+        self.next_pose = last_pose + increment.reshape(3,1) # was shape (3,1,1) which led to (3,3,1)
 
         #NOTE: let's start debugging without any error
         # self.next_error has been intialized to 0
