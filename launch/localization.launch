@@ -6,6 +6,10 @@
         <arg name="headless" value="false"/>
     </include>
 
+   <!-- Load to ros parameter servers the noise model-->
+    <rosparam command="load"
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/noise_model.yaml"/>
+
     <!-- Load yaml file containing map metadata to ros parameter server
     <rosparam command="load"
         file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map.yaml"

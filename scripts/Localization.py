@@ -33,20 +33,20 @@ class NoiseModel:
     Class called by the main node
     """
 
-    def __init__(self):
+    def __init__(self, alpha):
         """
         Initializes the noise model
-        @param: TBD
-        @result: initializes the estimated error on the control inputs
+        @param: alpha - 4 x 1 array of parameters to estimate the error on v, w
+        @result: class initialization
         """
         # TO DO: pick value for each parameter alpha
         # at the beginning let's debug with an error that's null
         # the variable alpha is temporary just to debug the class
-        alpha = 1
-        self.alpha1 = alpha
-        self.alpha2 = alpha
-        self.alpha3 = alpha
-        self.alpha4 = alpha
+        self.alpha1 = alpha[0]
+        self.alpha2 = alpha[1]
+        self.alpha3 = alpha[2]
+        self.alpha4 = alpha[3]
+        print("parameter alpha1 received by noise model :", self.alpha4)
         self.next_error = np.zeros((2, 2))
 
     def getError(self, v, w):
@@ -67,20 +67,20 @@ class NoiseModel:
 
 class MotionModel:
     """
-    Class implementing the motion model for the robot
+    Class implementing the motion model to estimate the robot's state
     """
 
-    def __init__(self, dt):
+    def __init__(self, dt, alpha):
         """
         Function that ...
-        @param: TBD
-        @result: TBD
+        @param: dt - time step (in seconds) to estimate the system's next state
+        @param: alpha - parameters to feed in to the noise model
+        @result: class initialization
         """
         ### class arguments
         # time step
         self.dt = dt
-        self.next_pose = np.zeros((3, 1))
-        self.noise_model = NoiseModel()
+        self.noise_model = NoiseModel(alpha)
 
     def predictPose(self, control_input, last_pose):
         """
@@ -101,13 +101,13 @@ class MotionModel:
                               v * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
                               w * self.dt], float).reshape(3, 1)
         print("increment :", increment)
-        self.next_pose = last_pose + increment.reshape(3, 1)  # was shape (3,1,1) which lead to (3,3,1)
-        print("next pose :", self.next_pose)
+        next_pose = last_pose + increment.reshape(3, 1)  # was shape (3,1,1) which lead to (3,3,1)
+        print("next pose :", next_pose)
         # NOTE: let's start debugging without any error
         # self.next_error has been intialized to 0
-        self.next_error = self.noise_model.getError(v, w)
+        next_error = self.noise_model.getError(v, w)
 
-        return self.next_pose, self.next_error
+        return next_pose, next_error
 
 
 class KalmanFilter:
@@ -115,15 +115,17 @@ class KalmanFilter:
     Class called by the main node and which implements the Kalman Filter
     """
 
-    def __init__(self, dt, initial_pose):
+    def __init__(self, dt, initial_pose, alpha):
         """
-        Function that ...
-        @param: TBD
-        @result: TBD
+        Method that initializes the class
+        @param: dt - time step (in seconds) to feed to the motion model
+        @param: initial_pose - robot's initial pose when the environment is launched
+        @param: alpha - parameters to feed in to the noise model
+        @result: class initialization
         """
         ### class arguments
         self.dt = dt
-        self.motion_model = MotionModel(self.dt)
+        self.motion_model = MotionModel(self.dt, alpha)
         # self.odom_error_model = self.motion_model.error_model
 
         # TO DO: needs to be initialized with a value
@@ -274,8 +276,10 @@ class Localization:
         ### initialize KF class ###
         # could be initialized in first run of ground_truth callback
         # now it should be  -x 0 -y 0 -z 0, see line 31 in scitos.launch
-        initial_pose = np.zeros((3,1)) 
-        self.kalman_filter = KalmanFilter(self.dt, initial_pose)
+        initial_pose = np.zeros((3, 1))
+        alpha = rospy.get_param("/noise_model/alpha")
+        print("parameters sent to noise model :", alpha)
+        self.kalman_filter = KalmanFilter(self.dt, initial_pose, alpha)
 
         ### initialization of class variables ###
         self.robot_pose = None
