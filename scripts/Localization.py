@@ -99,8 +99,8 @@ class MotionModel:
         # M_t:
         increment = np.array([[v * self.dt * np.cos(last_pose[2] + w * self.dt / 2)],
                              [v * self.dt * np.sin(last_pose[2] + w * self.dt / 2)],
-                             [w * self.dt]])
-        self.next_pose = last_pose + increment
+                             [w * self.dt]], float)
+        self.next_pose = last_pose + increment.reshape(3,1) # was shape (3,1,1) which lead to (3,3,1)
 
         #NOTE: let's start debugging without any error
         # self.next_error has been intialized to 0
@@ -154,7 +154,8 @@ class KalmanFilter:
 
         # compute the next state i.e. next robot pose knowing current control inputs
         self.next_state_mu, next_error = self.motion_model.predictPose(control_input, self.last_state_mu)
-
+        print("last_state_mu:", self.last_state_mu)
+        print("next_state_mu:", self.next_state_mu)
         # compute the jacobians necessary for the EKF prediction
         self.computeJacobian(control_input)
 
@@ -162,7 +163,7 @@ class KalmanFilter:
         self.next_state_covariance_R = self.jacobian_V @ next_error @ self.jacobian_V.T
 
         ### to be continued
-
+       
         # store current state estimate, current covariance on prior belief, current control inputs
         # for use in the next iteration
         self.last_state_mu = self.next_state_mu
@@ -191,34 +192,38 @@ class KalmanFilter:
         delta_y = self.next_state_mu[1, 0] - self.last_state_mu[1, 0]
         delta_psi = self.next_state_mu[2, 0] - self.last_state_mu[2, 0]
 
+        print("delta_g:", delta_g)
+        print("delta_x:", delta_x)
+        print("delta_y:", delta_y)
+        print("delta_psi:", delta_psi)
         # we should make sure we don't divide by zero
         if delta_x.all() > self.threshold_div_zero:
-            self.jacobian_G[:, 0] = delta_g / delta_x
+            self.jacobian_G[:, 0] = np.array(delta_g / delta_x).reshape(3,)
         else:
-            self.jacobian_G[:, 0] = delta_g / self.threshold_div_zero
+            self.jacobian_G[:, 0] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
 
         if delta_y.all() > self.threshold_div_zero:
-            self.jacobian_G[:, 1] = delta_g / delta_y
+            self.jacobian_G[:, 1] = np.array(delta_g / delta_y).reshape(3,)
         else:
-            self.jacobian_G[:, 1] = delta_g / self.threshold_div_zero
+            self.jacobian_G[:, 1] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
 
         if delta_psi.all() > self.threshold_div_zero:
-            self.jacobian_G[:, 2] = delta_g / delta_psi
+            self.jacobian_G[:, 2] = np.array(delta_g / delta_psi).reshape(3,)
         else:
-            self.jacobian_G[:, 2] = delta_g / self.threshold_div_zero
+            self.jacobian_G[:, 2] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
 
         delta_v = control_input[0] - self.last_control_input[0]
         delta_w = control_input[1] - self.last_control_input[1]
 
         if delta_v.all() > self.threshold_div_zero:
-            self.jacobian_V[:, 0] = delta_g / delta_v
+            self.jacobian_V[:, 0] = np.array(delta_g / delta_v).reshape(3,)
         else:
-            self.jacobian_V[:, 0] = delta_g / self.threshold_div_zero
+            self.jacobian_V[:, 0] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
 
         if delta_w.all() > self.threshold_div_zero:
-            self.jacobian_V[:, 1] = delta_g / delta_w
+            self.jacobian_V[:, 1] = np.array(delta_g / delta_w).reshape(3,)
         else:
-            self.jacobian_V[:, 1] = delta_g / self.threshold_div_zero
+            self.jacobian_V[:, 1] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
 
 
 class Localization:
