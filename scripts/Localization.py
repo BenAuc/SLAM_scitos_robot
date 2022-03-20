@@ -329,7 +329,8 @@ class Localization:
         @param: Twist message
         @result: control input ndarray
         """
-        pass
+        self.control_input = np.array([[data.linear.x],
+                                       [data.angular.z]]) # [v,w]'
 
 if __name__ == '__main__':
     # initialize node and name it
