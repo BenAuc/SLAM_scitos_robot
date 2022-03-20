@@ -35,30 +35,32 @@ class NoiseModel:
 
     def __init__(self):
         """
-        Function that ...
+        Initializes the noise model
         @param: TBD
-        @result: TBD
+        @result: initializes the estimated error on the control inputs
         """
-        #TO DO: pick value for each parameter alpha
+        # TO DO: pick value for each parameter alpha
         # at the beginning let's debug with an error that's null
-        self.alpha1 = 0
-        self.alpha2 = 0
-        self.alpha3 = 0
-        self.alpha4 = 0
-        self.next_error = 0
+        # the variable alpha is temporary just to debug the class
+        alpha = 1
+        self.alpha1 = alpha
+        self.alpha2 = alpha
+        self.alpha3 = alpha
+        self.alpha4 = alpha
+        self.next_error = np.zeros((2, 2))
 
     def getError(self, v, w):
         """
-        This method updates the predicted robot pose.
+        This method updates the estimated error given the control inputs.
         @param: 2 control inputs for which there is a level of uncertainty
             v: linear speed w.r.t. x-axis in robot frame
             w: angular speed w.r.t. z-axis in robot frame
-        @result: update of estimated error on the control inputs in a 2 x 2 numpy array containing the covariance matrix
+        @result: estimated error in a 2 x 2 numpy array
         """
 
-        # compute the covariance M_t which illustrates the undertainty on the control inputs
-        self.next_error = np.array([[self.alpha1 * v**2 + self.alpha2 * w**2, 0],
-                                    [0, self.alpha3 * v**2 + self.alpha4 * w**2]])
+        self.next_error[0, 0] = self.alpha1 * np.power(v, 2) + self.alpha2 * np.power(w, 2)
+
+        self.next_error[1, 1] = self.alpha3 * np.power(v, 2) + self.alpha4 * np.power(w, 2)
 
         return self.next_error
 
@@ -78,11 +80,7 @@ class MotionModel:
         # time step
         self.dt = dt
         self.next_pose = np.zeros((3, 1))
-
         self.noise_model = NoiseModel()
-        self.next_error = 0
-        #NOTE: let's start debugging with an error equals to null
-        self.error = 0
 
     def predictPose(self, control_input, last_pose):
         """
@@ -95,16 +93,19 @@ class MotionModel:
             *estimated error on the control inputs in a 2 x 2 numpy array containing the covariance matrix
         """
         v = control_input[0]
+        print("v :", v)
         w = control_input[1]
+        print("w :", w)
         # M_t:
-        increment = np.array([[v * self.dt * np.cos(last_pose[2] + w * self.dt / 2)],
-                             [v * self.dt * np.sin(last_pose[2] + w * self.dt / 2)],
-                             [w * self.dt]], float)
-        self.next_pose = last_pose + increment.reshape(3,1) # was shape (3,1,1) which lead to (3,3,1)
-
-        #NOTE: let's start debugging without any error
+        increment = np.array([v * self.dt * np.cos(last_pose[2] + w * self.dt / 2),
+                              v * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
+                              w * self.dt], float).reshape(3, 1)
+        print("increment :", increment)
+        self.next_pose = last_pose + increment.reshape(3, 1)  # was shape (3,1,1) which lead to (3,3,1)
+        print("next pose :", self.next_pose)
+        # NOTE: let's start debugging without any error
         # self.next_error has been intialized to 0
-        # self.next_error = self.noise_model(v, w)
+        self.next_error = self.noise_model.getError(v, w)
 
         return self.next_pose, self.next_error
 
@@ -113,6 +114,7 @@ class KalmanFilter:
     """
     Class called by the main node and which implements the Kalman Filter
     """
+
     def __init__(self, dt, initial_pose):
         """
         Function that ...
@@ -130,16 +132,16 @@ class KalmanFilter:
         self.last_state_mu = initial_pose
 
         # covariance on initial position is null beccause pose comes from ground truth
-        self.prior_last_covariance = np.zeros((3, 3))
+        self.last_covariance = np.zeros((3, 3))
+        self.next_covariance = np.zeros((3, 3))
         # robot doesn't move at t = 0
         self.last_control_input = np.zeros((2, 1))
 
         # initialization
         self.jacobian_G = np.zeros((3, 3))
         self.jacobian_V = np.zeros((3, 2))
-        self.threshold_div_zero = 1e-6
+        self.threshold_div_zero = 1e-2
         self.next_state_mu = np.zeros((3, 1))
-
 
     def predict(self, control_input):
         """
@@ -154,27 +156,25 @@ class KalmanFilter:
 
         # compute the next state i.e. next robot pose knowing current control inputs
         self.next_state_mu, next_error = self.motion_model.predictPose(control_input, self.last_state_mu)
-        print("last_state_mu:", self.last_state_mu)
-        print("next_state_mu:", self.next_state_mu)
+        print("jac V:", self.jacobian_V)
+        print("next error:", next_error)
         # compute the jacobians necessary for the EKF prediction
         self.computeJacobian(control_input)
 
         # compute covariance on the state transition probability
-        self.next_state_covariance_R = self.jacobian_V @ next_error @ self.jacobian_V.T
+        covariance_R = self.jacobian_V @ next_error @ self.jacobian_V.T
+        self.next_covariance = self.jacobian_G @ self.last_covariance @ self.jacobian_G.T + covariance_R
+        print("next_covariance :", self.next_covariance)
 
-        ### to be continued
-       
         # store current state estimate, current covariance on prior belief, current control inputs
         # for use in the next iteration
         self.last_state_mu = self.next_state_mu
 
-        self.prior_last_covariance = \
-            self.jacobian_G @ self.last_covariance @ self.jacobian_G.T + self.next_state_covariance_R
+        self.last_covariance = self.next_covariance
 
         self.last_control_input = control_input
 
-        return self.next_state_mu, self.next_covariance
-
+        return self.next_state_mu, self.next_covariance, next_error
 
     def computeJacobian(self, control_input):
         """
@@ -188,9 +188,9 @@ class KalmanFilter:
         """
 
         delta_g = self.next_state_mu - self.last_state_mu
-        delta_x = self.next_state_mu[0, 0] - self.last_state_mu[0, 0]
-        delta_y = self.next_state_mu[1, 0] - self.last_state_mu[1, 0]
-        delta_psi = self.next_state_mu[2, 0] - self.last_state_mu[2, 0]
+        delta_x = np.array(self.next_state_mu[0, 0] - self.last_state_mu[0, 0])
+        delta_y = np.array(self.next_state_mu[1, 0] - self.last_state_mu[1, 0])
+        delta_psi = np.array(self.next_state_mu[2, 0] - self.last_state_mu[2, 0])
 
         print("delta_g:", delta_g)
         print("delta_x:", delta_x)
@@ -198,32 +198,43 @@ class KalmanFilter:
         print("delta_psi:", delta_psi)
         # we should make sure we don't divide by zero
         if delta_x.all() > self.threshold_div_zero:
-            self.jacobian_G[:, 0] = np.array(delta_g / delta_x).reshape(3,)
+            self.jacobian_G[:, 0] = np.array(delta_g / delta_x).reshape(3, )
         else:
-            self.jacobian_G[:, 0] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
+            #             self.jacobian_G[:, 0] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
+            self.jacobian_G[:, 0] = 0
 
         if delta_y.all() > self.threshold_div_zero:
-            self.jacobian_G[:, 1] = np.array(delta_g / delta_y).reshape(3,)
+            self.jacobian_G[:, 1] = np.array(delta_g / delta_y).reshape(3, )
         else:
-            self.jacobian_G[:, 1] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
+            #             self.jacobian_G[:, 1] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
+            self.jacobian_G[:, 1] = 0
 
         if delta_psi.all() > self.threshold_div_zero:
-            self.jacobian_G[:, 2] = np.array(delta_g / delta_psi).reshape(3,)
+            self.jacobian_G[:, 2] = np.array(delta_g / delta_psi).reshape(3, )
         else:
-            self.jacobian_G[:, 2] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
+            #             self.jacobian_G[:, 2] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
+            self.jacobian_G[:, 2] = 0
 
         delta_v = control_input[0] - self.last_control_input[0]
         delta_w = control_input[1] - self.last_control_input[1]
 
+        print("delta_v:", delta_v)
+        print("delta_w:", delta_w)
+
         if delta_v.all() > self.threshold_div_zero:
-            self.jacobian_V[:, 0] = np.array(delta_g / delta_v).reshape(3,)
+            self.jacobian_V[:, 0] = np.array(delta_g / delta_v).reshape(3, )
         else:
-            self.jacobian_V[:, 0] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
+            #             self.jacobian_V[:, 0] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
+            self.jacobian_V[:, 0] = 0
 
         if delta_w.all() > self.threshold_div_zero:
-            self.jacobian_V[:, 1] = np.array(delta_g / delta_w).reshape(3,)
+            self.jacobian_V[:, 1] = np.array(delta_g / delta_w).reshape(3, )
         else:
-            self.jacobian_V[:, 1] = np.array(delta_g / self.threshold_div_zero).reshape(3,)
+            #             self.jacobian_V[:, 1] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
+            self.jacobian_V[:, 1] = 0
+
+        print("jac G:", self.jacobian_G)
+        print("jac V:", self.jacobian_V)
 
 
 class Localization:
