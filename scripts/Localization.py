@@ -33,7 +33,7 @@ class NoiseModel:
     Class called by the main node
     """
 
-    def __init__(self, alpha):
+    def __init__(self):
         """
         Initializes the noise model
         @param: alpha - 4 x 1 array of parameters to estimate the error on v, w
@@ -42,14 +42,15 @@ class NoiseModel:
         # TO DO: pick value for each parameter alpha
         # at the beginning let's debug with an error that's null
         # the variable alpha is temporary just to debug the class
+        alpha = rospy.get_param("/noise_model/alpha")
+        print("parameters sent to noise model :", alpha)
         self.alpha1 = alpha[0]
         self.alpha2 = alpha[1]
         self.alpha3 = alpha[2]
         self.alpha4 = alpha[3]
-        print("parameter alpha1 received by noise model :", self.alpha4)
-        self.next_error = np.zeros((2, 2))
+        print("parameter alpha4 received by noise model :", self.alpha4)
 
-    def getError(self, v, w):
+    def estimateError(self, v, w):
         """
         This method updates the estimated error given the control inputs.
         @param: 2 control inputs for which there is a level of uncertainty
@@ -57,12 +58,11 @@ class NoiseModel:
             w: angular speed w.r.t. z-axis in robot frame
         @result: estimated error in a 2 x 2 numpy array
         """
+        next_error = np.zeros((2, 2))
+        next_error[0, 0] = self.alpha1 * np.power(v, 2) + self.alpha2 * np.power(w, 2)
+        next_error[1, 1] = self.alpha3 * np.power(v, 2) + self.alpha4 * np.power(w, 2)
 
-        self.next_error[0, 0] = self.alpha1 * np.power(v, 2) + self.alpha2 * np.power(w, 2)
-
-        self.next_error[1, 1] = self.alpha3 * np.power(v, 2) + self.alpha4 * np.power(w, 2)
-
-        return self.next_error
+        return next_error
 
 
 class MotionModel:
@@ -70,7 +70,7 @@ class MotionModel:
     Class implementing the motion model to estimate the robot's state
     """
 
-    def __init__(self, dt, alpha):
+    def __init__(self, dt):
         """
         Function that ...
         @param: dt - time step (in seconds) to estimate the system's next state
@@ -80,7 +80,7 @@ class MotionModel:
         ### class arguments
         # time step
         self.dt = dt
-        self.noise_model = NoiseModel(alpha)
+        self.noise_model = NoiseModel()
 
     def predictPose(self, control_input, last_pose):
         """
@@ -105,7 +105,7 @@ class MotionModel:
         print("next pose :", next_pose)
         # NOTE: let's start debugging without any error
         # self.next_error has been intialized to 0
-        next_error = self.noise_model.getError(v, w)
+        next_error = self.noise_model.estimateError(v, w)
 
         return next_pose, next_error
 
@@ -115,7 +115,7 @@ class KalmanFilter:
     Class called by the main node and which implements the Kalman Filter
     """
 
-    def __init__(self, dt, initial_pose, alpha):
+    def __init__(self, dt, initial_pose):
         """
         Method that initializes the class
         @param: dt - time step (in seconds) to feed to the motion model
@@ -125,7 +125,7 @@ class KalmanFilter:
         """
         ### class arguments
         self.dt = dt
-        self.motion_model = MotionModel(self.dt, alpha)
+        self.motion_model = MotionModel(self.dt)
         # self.odom_error_model = self.motion_model.error_model
 
         # TO DO: needs to be initialized with a value
@@ -133,9 +133,8 @@ class KalmanFilter:
         # self.last_state_mu = np.zeros((3, 1))
         self.last_state_mu = initial_pose
 
-        # covariance on initial position is null beccause pose comes from ground truth
+        # covariance on initial position is null because pose comes from ground truth
         self.last_covariance = np.zeros((3, 3))
-        self.next_covariance = np.zeros((3, 3))
         # robot doesn't move at t = 0
         self.last_control_input = np.zeros((2, 1))
 
@@ -165,18 +164,18 @@ class KalmanFilter:
 
         # compute covariance on the state transition probability
         covariance_R = self.jacobian_V @ next_error @ self.jacobian_V.T
-        self.next_covariance = self.jacobian_G @ self.last_covariance @ self.jacobian_G.T + covariance_R
-        print("next_covariance :", self.next_covariance)
+        next_covariance = self.jacobian_G @ self.last_covariance @ self.jacobian_G.T + covariance_R
+        print("next_covariance :", next_covariance)
 
         # store current state estimate, current covariance on prior belief, current control inputs
         # for use in the next iteration
         self.last_state_mu = self.next_state_mu
 
-        self.last_covariance = self.next_covariance
+        self.last_covariance = next_covariance
 
         self.last_control_input = control_input
 
-        return self.next_state_mu, self.next_covariance, next_error
+        return self.next_state_mu, next_covariance
 
     def computeJacobian(self, control_input):
         """
@@ -277,9 +276,7 @@ class Localization:
         # could be initialized in first run of ground_truth callback
         # now it should be  -x 0 -y 0 -z 0, see line 31 in scitos.launch
         initial_pose = np.zeros((3, 1))
-        alpha = rospy.get_param("/noise_model/alpha")
-        print("parameters sent to noise model :", alpha)
-        self.kalman_filter = KalmanFilter(self.dt, initial_pose, alpha)
+        self.kalman_filter = KalmanFilter(self.dt, initial_pose)
 
         ### initialization of class variables ###
         self.robot_pose = None
@@ -301,7 +298,7 @@ class Localization:
 
     def step(self):
         """
-        Perform an iteration of the localiyation loop
+        Perform an iteration of the localization loop
         @param: self
         @result: updates 
         """
@@ -349,7 +346,7 @@ class Localization:
 
 if __name__ == '__main__':
     # initialize node and name it
-    rospy.init_node("OGMapping")
+    rospy.init_node("LocalizationNode") # should this be "LocalizationNode" right ? I changed it
     # go to class that provides all the functionality
     # and check for errors
     try:
