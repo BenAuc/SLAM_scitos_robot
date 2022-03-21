@@ -2,10 +2,7 @@
 
 """
 Template IAS0060 home assignment 4 Project 1 (SCITOS).
-Node which handles odometry and laserdata, updates
-the occ_map class and publishes the OccupanyGrid message.
-And a map class that handles the probabilistic map up-
-dates.
+Reused by team 3 towards implementation of home assignment 6 Project 1 (SCITOS).
 
 @author: Christian Meurer
 @date: February 2022
@@ -13,7 +10,7 @@ dates.
 Update: complete of assignment 6
 Team: Scitos group 3
 Team members: Benoit Auclair; Michael Bryan
-Date: March 17, 2022
+Date: March 23, 2022
 """
 
 import numpy as np
@@ -30,7 +27,7 @@ from std_msgs.msg import Header
 
 class NoiseModel:
     """
-    Class called by the main node
+    Class implementing the estimation of the error on the control inputs to the robot
     """
 
     def __init__(self):
@@ -288,7 +285,7 @@ class Localization:
         """
         Main loop of class.
         @param: self
-        @result: runs the step function for the predicton and update step.
+        @result: runs the step function for the predicton and update steps.
         """
         while not rospy.is_shutdown():
             ### step only when odometry are available ###
@@ -298,9 +295,9 @@ class Localization:
 
     def step(self):
         """
-        Perform an iteration of the localization loop
+        Perform an iteration of the localization loop.
         @param: self
-        @result: updates 
+        @result: performs the predicton and update steps.
         """
         self.kalman_filter.predict(self.control_input)
         pass
@@ -310,8 +307,8 @@ class Localization:
         Handles incoming Odometry messages and performs a
         partial quaternion to euler angle transformation to get the yaw angle theta
         @param: pose data stored in the odometry message
-        @result: global variable pose_2D containing the planar
-                 coordinates robot_x, robot_y and the yaw angle theta
+        @result: global variables self.robot_pose containing the planar
+                 coordinates (x,y)) and self.robot_yaw containing the yaw angle theta
         """
         self.odom_msg = data
         # extract yaw angle of robot pose using the transformation on the odometry message
@@ -322,10 +319,6 @@ class Localization:
                                                axes='szyx')[0]
         # extract robot pose
         self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
-
-        # # shift the robot pose to the laser frame
-        # self.laserscanner_pose = [self.robot_pose[0] + np.cos(self.robot_yaw)*self.laserScaner_to_robotbase[0],
-        #                           self.robot_pose[1] + np.sin(self.robot_yaw)*self.laserScaner_to_robotbase[0]]
 
     def groundTruthCallback(self, data):
         """
@@ -339,7 +332,7 @@ class Localization:
         """
         gets twist message from teleop_key.py
         @param: Twist message
-        @result: control input ndarray
+        @result: control input ndarray 2 x 1
         """
         self.control_input = np.array([[data.linear.x],
                                        [data.angular.z]]) # [v,w]'
