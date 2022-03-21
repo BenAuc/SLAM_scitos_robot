@@ -166,7 +166,6 @@ class KalmanFilter:
             *angular speed w.r.t. z-axis in robot frame, w
         @result: the method returns:
             *next_state - numpy array of dim 3 x 1 containing the 3 tracked variables (x,y,psi)
-            *next_covariance - numpy array of dim 3 x 3 containing the covariance matrix
         """
 
         # compute the next state i.e. next robot pose knowing current control inputs
