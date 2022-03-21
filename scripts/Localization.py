@@ -297,14 +297,11 @@ class Localization:
         ### predicted pose message ###
         self.predicted_state_msg = PoseStamped() # output
         self.predicted_state_msg.header = Header()
+        self.predicted_state_msg.header.frame_id = "predicted pose"
         self.predicted_state_msg.pose = Pose()
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
-        self.robot_pose = None
-        self.odom_msg = None
-        self.ground_truth_msg = None
-        self.control_input = np.zeros((2, 1)) # [v, w]'
-
+        
     def run(self):
         """
         Main loop of class.
@@ -324,7 +321,15 @@ class Localization:
         @result: performs the predicton and update steps.
         """
         pose = self.kalman_filter.predict(self.control_input)
-        # self.predicted_state_msg.pose.point.x = next_state_mu
+        ### Message editing ###
+        self.predicted_state_msg.pose.position.x = pose[0,0]
+        self.predicted_state_msg.pose.position.x = pose[1,0]
+        q = quaternion_from_euler(pose[2,0], 0, 0, 'rzyx')
+        self.predicted_state_msg.pose.orientation.x = q[0]
+        self.predicted_state_msg.pose.orientation.y = q[1]
+        self.predicted_state_msg.pose.orientation.z = q[2]
+        self.predicted_state_msg.pose.orientation.w = q[3]
+        ### Publish ###
         self.pose_pub.publish(self.predicted_state_msg)
         pass
 
