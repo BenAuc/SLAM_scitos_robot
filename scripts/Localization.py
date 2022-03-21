@@ -297,7 +297,7 @@ class Localization:
         ### predicted pose message ###
         self.predicted_state_msg = PoseStamped() # output
         self.predicted_state_msg.header = Header()
-        self.predicted_state_msg.header.frame_id = "predicted pose"
+        self.predicted_state_msg.header.frame_id = "odom"
         self.predicted_state_msg.pose = Pose()
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
@@ -323,7 +323,7 @@ class Localization:
         pose = self.kalman_filter.predict(self.control_input)
         ### Message editing ###
         self.predicted_state_msg.pose.position.x = pose[0,0]
-        self.predicted_state_msg.pose.position.x = pose[1,0]
+        self.predicted_state_msg.pose.position.y = pose[1,0]
         q = quaternion_from_euler(pose[2,0], 0, 0, 'rzyx')
         self.predicted_state_msg.pose.orientation.x = q[0]
         self.predicted_state_msg.pose.orientation.y = q[1]
