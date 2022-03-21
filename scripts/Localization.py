@@ -16,8 +16,9 @@ Date: March 23, 2022
 import numpy as np
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from geometry_msgs.msg import Pose, PoseStamped, Point, Twist
+from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, Twist
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Header
 
 class NoiseModel:
     """
@@ -270,8 +271,9 @@ class Localization:
                  set up publishers and subscribers
         """
         ### timing ###
-        self.dt = dt
-        self.rate = rospy.Rate(20)
+        self.frequency = 20 # [Hz]
+        self.dt = 1/self.frequency # [s]
+        self.rate = rospy.Rate(self.frequency) # timing object
 
         ### subscribers ###
         self.ground_truth_sub = rospy.Subscriber("/ground_truth", Odometry, self.groundTruthCallback)
@@ -288,10 +290,17 @@ class Localization:
         self.kalman_filter = KalmanFilter(self.dt, initial_pose)
 
         ### initialization of class variables ###
-        self.robot_pose = None
-        self.odom_msg = None
-        self.ground_truth_msg = None
+        self.robot_pose = None 
+        self.odom_msg = None # input
+        self.ground_truth_msg = None # input
         self.control_input = np.zeros((2,1)) # [v, w]' 
+        
+        ### predicted pose message ###
+        self.predicted_state_msg = PoseStamped() # output
+        self.predicted_state_msg.header = Header()
+        self.predicted_state_msg.pose = Pose()
+        self.predicted_state_msg.pose.position = Point()
+        self.predicted_state_msg.pose.orientation = Quaternion()
 
     def run(self):
         """
@@ -311,7 +320,9 @@ class Localization:
         @param: self
         @result: performs the predicton and update steps.
         """
-        self.kalman_filter.predict(self.control_input)
+        next_state_mu, b = self.kalman_filter.predict(self.control_input)
+        # self.predicted_state_msg.pose.point.x = next_state_mu
+        self.pose_pub.publish(self.predicted_state_msg)
         pass
 
     def odometryCallback(self, data):
