@@ -18,12 +18,6 @@ import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import Pose, PoseStamped, Point, Twist
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Header
-# from sensor_msgs.msg import LaserScan
-# from nav_msgs.msg import OccupancyGrid
-# from nav_msgs.msg import MapMetaData
-# from coordinate_transformations import world_to_grid
-# from bresenham import bresenham
 
 class NoiseModel:
     """
@@ -127,7 +121,6 @@ class KalmanFilter:
 
         # TO DO: needs to be initialized with a value
         # coming from ground truth
-        # self.last_state_mu = np.zeros((3, 1))
         self.last_state_mu = initial_pose
 
         # covariance on initial position is null because pose comes from ground truth
@@ -262,12 +255,6 @@ class Localization:
                                                   
         ### publishers ###
         self.pose_pub = rospy.Publisher("/robot_pose", PoseStamped, queue_size=1) # queue_size=1 => only the newest map available
-        
-        ### get map parameters ###
-        # self.width = rospy.get_param("/map/width")
-        # self.height = rospy.get_param("/map/height")
-        # self.resolution = rospy.get_param("/map/resolution")
-        # self.map_origin = rospy.get_param("/map/origin")
         
         ### initialize KF class ###
         # could be initialized in first run of ground_truth callback
