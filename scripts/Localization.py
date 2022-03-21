@@ -167,7 +167,6 @@ class KalmanFilter:
             *angular speed w.r.t. z-axis in robot frame, w
         @result: the method returns:
             *next_state - numpy array of dim 3 x 1 containing the 3 tracked variables (x,y,psi)
-            *next_covariance - numpy array of dim 3 x 3 containing the covariance matrix
         """
 
         # compute the next state i.e. next robot pose knowing current control inputs
@@ -188,7 +187,7 @@ class KalmanFilter:
         self.last_covariance = next_covariance
         self.last_control_input = control_input
 
-        return next_state_mu, next_covariance
+        return next_state_mu
 
 
         #######################
@@ -301,6 +300,10 @@ class Localization:
         self.predicted_state_msg.pose = Pose()
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
+        self.robot_pose = None
+        self.odom_msg = None
+        self.ground_truth_msg = None
+        self.control_input = np.zeros((2, 1)) # [v, w]'
 
     def run(self):
         """
@@ -320,7 +323,7 @@ class Localization:
         @param: self
         @result: performs the predicton and update steps.
         """
-        next_state_mu, b = self.kalman_filter.predict(self.control_input)
+        pose = self.kalman_filter.predict(self.control_input)
         # self.predicted_state_msg.pose.point.x = next_state_mu
         self.pose_pub.publish(self.predicted_state_msg)
         pass
