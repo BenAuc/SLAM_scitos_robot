@@ -187,7 +187,7 @@ class KalmanFilter:
         self.last_covariance = next_covariance
         self.last_control_input = control_input
 
-        return next_state_mu, next_covariance
+        return next_state_mu
 
 
         #######################
@@ -291,7 +291,7 @@ class Localization:
         self.robot_pose = None
         self.odom_msg = None
         self.ground_truth_msg = None
-        self.control_input = np.zeros((2,1)) # [v, w]' 
+        self.control_input = np.zeros((2, 1)) # [v, w]'
 
     def run(self):
         """
@@ -311,7 +311,7 @@ class Localization:
         @param: self
         @result: performs the predicton and update steps.
         """
-        self.kalman_filter.predict(self.control_input)
+        pose = self.kalman_filter.predict(self.control_input)
         pass
 
     def odometryCallback(self, data):
