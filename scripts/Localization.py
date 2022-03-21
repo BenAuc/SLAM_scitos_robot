@@ -23,6 +23,8 @@ from std_msgs.msg import Header
 class NoiseModel:
     """
     Class implementing the estimation of the error on the control inputs to the robot
+    @input: control inputs as numpy array, parameters of noise model
+    @output: estimate of error on control inputs
     """
 
     def __init__(self):
@@ -31,16 +33,12 @@ class NoiseModel:
         @param: alpha - 4 x 1 array of parameters to estimate the error on v, w
         @result: class initialization
         """
-        # TO DO: pick value for each parameter alpha
-        # at the beginning let's debug with an error that's null
-        # the variable alpha is temporary just to debug the class
+        # fetch noise model from ros parameter server
         alpha = rospy.get_param("/noise_model/alpha")
-        print("parameters sent to noise model :", alpha)
         self.alpha1 = alpha[0]
         self.alpha2 = alpha[1]
         self.alpha3 = alpha[2]
         self.alpha4 = alpha[3]
-        print("parameter alpha4 received by noise model :", self.alpha4)
 
     def estimateError(self, v, w):
         """
@@ -50,6 +48,7 @@ class NoiseModel:
             w: angular speed w.r.t. z-axis in robot frame
         @result: estimated error in a 2 x 2 numpy array
         """
+        # compute error given control input
         next_error = np.zeros((2, 2))
         next_error[0, 0] = self.alpha1 * np.power(v, 2) + self.alpha2 * np.power(w, 2)
         next_error[1, 1] = self.alpha3 * np.power(v, 2) + self.alpha4 * np.power(w, 2)
@@ -60,6 +59,8 @@ class NoiseModel:
 class MotionModel:
     """
     Class implementing the motion model to estimate the robot's state
+    @input: control inputs as numpy array
+    @output: pose estimate
     """
 
     def __init__(self, dt):
@@ -76,6 +77,8 @@ class MotionModel:
 
         # initialization of the Jacobians
         self.jacobian_G = np.zeros((3, 3))
+
+        # the diagonal is always one
         self.jacobian_G[0, 0] = 1
         self.jacobian_G[1, 1] = 1
         self.jacobian_G[2, 2] = 1
@@ -93,20 +96,22 @@ class MotionModel:
             *predicted pose in a 3 x 1 numpy array containing x, y, psi
             *estimated error on the control inputs in a 2 x 2 numpy array containing the covariance matrix
         """
+        # extract velocities v, w
         v = control_input[0]
-        print("v :", v)
         w = control_input[1]
-        print("w :", w)
-        # M_t:
+
+        # calculate the step magnitude
         increment = np.array([v * self.dt * np.cos(last_pose[2] + w * self.dt / 2),
                               v * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
                               w * self.dt], float).reshape(3, 1)
-        print("increment :", increment)
-        next_pose = last_pose + increment.reshape(3, 1)  # was shape (3,1,1) which lead to (3,3,1)
-        print("next pose :", next_pose)
 
+        # add step size to previous pose
+        next_pose = last_pose + increment.reshape(3, 1)
+
+        # estimate error
         next_error = self.noise_model.estimateError(v, w)
 
+        # compute the jacobians
         self.computeJacobian(v, w, last_pose)
 
         return next_pose, next_error, self.jacobian_G, self.jacobian_V
@@ -121,20 +126,33 @@ class MotionModel:
             *self.jacobian_G: Jacobian with respect to the state estimate
             *self.jacobian_V: Jacobian with respect to the control inputs
         """
-
+        # dg_x / d_psi = -v * dt * sin(psi_t-1 + w_t * dt / 2)
         self.jacobian_G[0, 2] = -1 * v * self.dt * np.sin(last_pose[2] + w * self.dt / 2)
+
+        # dg_y / d_psi = v * dt * cos(psi_t-1 + w_t * dt / 2)
         self.jacobian_G[1, 2] = v * self.dt * np.cos(last_pose[2] + w * self.dt / 2)
 
+        # dg_x  / d_v = dt * cos(psi_t-1 + w_t * dt / 2)
         self.jacobian_V[0, 0] = self.dt * np.cos(last_pose[2] + w * self.dt / 2)
+
+        # dg_x  / d_w = -v * dt^2 * sin(psi_t-1 + w_t * dt / 2)
         self.jacobian_V[0, 1] = -1 * v * np.power(self.dt, 2) * 0.5 * np.sin(last_pose[2] + w * self.dt / 2)
 
+        # dg_y / d_v = dt * sin(psi_t-1 + w_t * dt / 2)
         self.jacobian_V[1, 0] = self.dt * np.sin(last_pose[2] + w * self.dt / 2)
+
+        # dg_y / d_w = -v * dt^2 * sin(psi_t-1 + w_t * dt / 2)
         self.jacobian_V[1, 1] = v * np.power(self.dt, 2) * 0.5 * np.cos(last_pose[2] + w * self.dt / 2)
+
+        # dg_psi / d_w = dt
         self.jacobian_V[2, 1] = self.dt
+
 
 class KalmanFilter:
     """
     Class called by the main node and which implements the Kalman Filter
+    @input: control inputs as numpy array
+    @output: pose estimate
     """
 
     def __init__(self, dt, initial_pose):
@@ -148,14 +166,13 @@ class KalmanFilter:
         ### class arguments
         self.dt = dt
         self.motion_model = MotionModel(self.dt)
-        # self.odom_error_model = self.motion_model.error_model
 
-        # TO DO: needs to be initialized with a value
-        # coming from ground truth
+        # pose initialized at world origin
         self.last_state_mu = initial_pose
 
         # covariance on initial position is null because pose comes from ground truth
         self.last_covariance = np.zeros((3, 3))
+
         # robot doesn't move at t = 0
         self.last_control_input = np.zeros((2, 1))
 
@@ -168,89 +185,20 @@ class KalmanFilter:
         @result: the method returns:
             *next_state - numpy array of dim 3 x 1 containing the 3 tracked variables (x,y,psi)
         """
-
         # compute the next state i.e. next robot pose knowing current control inputs
         next_state_mu, next_error, jacobian_G, jacobian_V = self.motion_model.predictPose(control_input, self.last_state_mu)
-        print("jac V:", jacobian_V)
-        print("jac G:", jacobian_G)
-        print("next error:", next_error)
-        print("next state:", next_state_mu)
 
         # compute covariance on the state transition probability
         covariance_R = jacobian_V @ next_error @ jacobian_V.T
         next_covariance = jacobian_G @ self.last_covariance @ jacobian_G.T + covariance_R
-        print("next_covariance :", next_covariance)
 
-        # store current state estimate, current covariance on prior belief, current control inputs
+        # store current state estimate, covariance, control inputs
         # for use in the next iteration
         self.last_state_mu = next_state_mu
         self.last_covariance = next_covariance
         self.last_control_input = control_input
 
         return next_state_mu
-
-
-        #######################
-        #Compute the Jacobians v1
-        #######################
-
-    # def computeJacobian(self, control_input):
-    #     """
-    #     This method computes the Jacobians of the kinematic model.
-    #     @param: control_input - numpy array of dim 2 x 1 containing:
-    #         *linear speed w.r.t. x-axis in robot frame, v
-    #         *angular speed w.r.t. z-axis in robot frame, w
-    #     @result:
-    #         *self.jacobian_G: Jacobian with respect to the state estimate
-    #         *self.jacobian_V: Jacobian with respect to the control inputs
-    #     """
-
-        # delta_g = self.next_state_mu - self.last_state_mu
-        # delta_x = np.array(self.next_state_mu[0, 0] - self.last_state_mu[0, 0])
-        # delta_y = np.array(self.next_state_mu[1, 0] - self.last_state_mu[1, 0])
-        # delta_psi = np.array(self.next_state_mu[2, 0] - self.last_state_mu[2, 0])
-        #
-        # print("delta_g:", delta_g)
-        # print("delta_x:", delta_x)
-        # print("delta_y:", delta_y)
-        # print("delta_psi:", delta_psi)
-
-        # # we should make sure we don't divide by zero
-        # if delta_x.all() > self.threshold_div_zero:
-        #     self.jacobian_G[:, 0] = np.array(delta_g / delta_x).reshape(3, )
-        # else:
-        #     #             self.jacobian_G[:, 0] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
-        #     self.jacobian_G[:, 0] = 0
-        #
-        # if delta_y.all() > self.threshold_div_zero:
-        #     self.jacobian_G[:, 1] = np.array(delta_g / delta_y).reshape(3, )
-        # else:
-        #     #             self.jacobian_G[:, 1] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
-        #     self.jacobian_G[:, 1] = 0
-        #
-        # if delta_psi.all() > self.threshold_div_zero:
-        #     self.jacobian_G[:, 2] = np.array(delta_g / delta_psi).reshape(3, )
-        # else:
-        #     #             self.jacobian_G[:, 2] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
-        #     self.jacobian_G[:, 2] = 0
-        #
-        # delta_v = control_input[0] - self.last_control_input[0]
-        # delta_w = control_input[1] - self.last_control_input[1]
-        #
-        # print("delta_v:", delta_v)
-        # print("delta_w:", delta_w)
-        #
-        # if delta_v.all() > self.threshold_div_zero:
-        #     self.jacobian_V[:, 0] = np.array(delta_g / delta_v).reshape(3, )
-        # else:
-        #     #             self.jacobian_V[:, 0] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
-        #     self.jacobian_V[:, 0] = 0
-        #
-        # if delta_w.all() > self.threshold_div_zero:
-        #     self.jacobian_V[:, 1] = np.array(delta_g / delta_w).reshape(3, )
-        # else:
-        #     #             self.jacobian_V[:, 1] = np.array(delta_g / self.threshold_div_zero).reshape(3, )
-        #     self.jacobian_V[:, 1] = 0
 
 
 class Localization:
@@ -295,7 +243,7 @@ class Localization:
         self.control_input = np.zeros((2,1)) # [v, w]' 
         
         ### predicted pose message ###
-        self.predicted_state_msg = PoseStamped() # output
+        self.predicted_state_msg = PoseStamped()
         self.predicted_state_msg.header = Header()
         self.predicted_state_msg.header.frame_id = "odom"
         self.predicted_state_msg.pose = Pose()
@@ -324,14 +272,14 @@ class Localization:
         ### Message editing ###
         self.predicted_state_msg.pose.position.x = pose[0,0]
         self.predicted_state_msg.pose.position.y = pose[1,0]
-        q = quaternion_from_euler(pose[2,0], 0, 0, 'rzyx')
+        q = quaternion_from_euler(pose[2, 0], 0, 0, 'rzyx')
         self.predicted_state_msg.pose.orientation.x = q[0]
         self.predicted_state_msg.pose.orientation.y = q[1]
         self.predicted_state_msg.pose.orientation.z = q[2]
         self.predicted_state_msg.pose.orientation.w = q[3]
+
         ### Publish ###
         self.pose_pub.publish(self.predicted_state_msg)
-        pass
 
     def odometryCallback(self, data):
         """
@@ -365,8 +313,9 @@ class Localization:
         @param: Twist message
         @result: control input ndarray 2 x 1
         """
+        # extract linear and angular velocities
         self.control_input = np.array([[data.linear.x],
-                                       [data.angular.z]]) # [v,w]'
+                                       [data.angular.z]])
 
 if __name__ == '__main__':
     # initialize node and name it
