@@ -211,7 +211,8 @@ class KalmanFilter:
 
     def correctionStep(self, map_features, z_i):
         """
-        This method predicts the features measured by the range finder given a pose estimate
+        This method corrects the state estimate and covariance from the motion model based on current measurements
+
         @param:
             *map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
             candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
@@ -219,7 +220,7 @@ class KalmanFilter:
             *z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
             where the axis 1 contains in order r, phi, s
 
-        @result: the method returns:
+        This method computes the following:
             *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
             where the axis 1 contains in order r, phi, s
 
@@ -229,6 +230,7 @@ class KalmanFilter:
 
             *self.last_covariance: covariance of state variables corrected by the measurements
 
+        @result: the method returns:
             *self.last_state_mu: state estimate corrected by the measurements
         """
         ### initialize matrices and indices ###
@@ -300,7 +302,7 @@ class KalmanFilter:
                 innovation_S_inv[prediction, :, :] = np.eye(np.shape(innovation_S_inv)[1])
 
         ### correction of state estimate and covariance ###
-        
+
         # for each observed feature
         # a likelihood score is computed w.r.t. each feature in the map
         # the kalman gain is computed for this observation
@@ -327,7 +329,7 @@ class KalmanFilter:
             self.last_state_mu += kalman_gain * (observation - z_hat[most_likely_feature, :])
             self.last_covariance = (np.eye(3) - kalman_gain * jacobian_H[most_likely_feature, :, :]) @ self.last_covariance
 
-        return
+        return self.last_state_mu
 
 
 class Localization:
