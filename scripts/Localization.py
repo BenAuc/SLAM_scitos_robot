@@ -182,8 +182,8 @@ class KalmanFilter:
         self.last_control_input = np.zeros((2, 1))
 
         # sensor noise model
-        # self.sensor_covariance = np.diag(rospy.get_param("/sensor_noise_model/variances"))
-        self.sensor_covariance = np.diag([1, 1, 1])
+        self.sensor_covariance = np.diag(rospy.get_param("/sensor_noise_model/variances"))
+        # self.sensor_covariance = np.diag([1, 1, 1])
         print("sensor covariance matrix : ", self.sensor_covariance)
 
     def predictionStep(self, control_input):
