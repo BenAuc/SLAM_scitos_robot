@@ -212,12 +212,10 @@ class KalmanFilter:
     def correctionStep(self, map_features, z_i):
         """
         This method corrects the state estimate and covariance from the motion model based on current measurements
-
-        @param:
-            *map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
+         @param:map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
             candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
 
-            *z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
+         @param:z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
             where the axis 1 contains in order r, phi, s
 
         This method computes the following:
@@ -230,8 +228,7 @@ class KalmanFilter:
 
             *self.last_covariance: covariance of state variables corrected by the measurements
 
-        @result: the method returns:
-            *self.last_state_mu: state estimate corrected by the measurements
+        @result: the method returns self.last_state_mu: the state estimate corrected by the measurements
         """
         ### initialize matrices and indices ###
 
@@ -441,7 +438,7 @@ class Localization:
     def controlInputCallback(self, data):
         """
         gets twist message from teleop_key.py
-        @param: Twist message
+        @param: data of type Twist message
         @result: control input ndarray 2 x 1
         """
         # extract linear and angular velocities
