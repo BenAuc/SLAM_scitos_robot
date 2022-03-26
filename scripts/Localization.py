@@ -214,24 +214,25 @@ class KalmanFilter:
         This method predicts the features measured by the range finder given a pose estimate
         @param:
             *map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
-            candidates that may be observed given current robot pose, and where the axis 1 contains in order m_x, m_y, m_s
+            candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
 
-            *z_i: numpy array of dim (i, 3) containing the i features extracted from the laser readings
-            where the axis 0 contains in order m_x, m_y, m_s
+            *z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
+            where the axis 1 contains in order m_x, m_y, m_s
 
         @result: the method returns:
-            *z_hat: numpy array of dim (k, 3) containing the predicted measurements
+            *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
+            where the axis 1 contains in order m_x, m_y, m_s
 
             *jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
 
             *innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
 
-            *likelihood_scores: numpy array of dim (k, i) containing the likelihood that each k predicted feature corresponds
-                                to i observed features
+            *likelihood_scores: numpy array of dim (k, i) containing the likelihood that each k predicted feature
+            corresponds to either of the i observed features
 
             *self.last_covariance: covariance of state variables corrected by the measurements
 
-             *self.last_state_mu: state estimate corrected by the measurements
+            *self.last_state_mu: state estimate corrected by the measurements
         """
         # initialize matrices of predicted measurements, jacobian H, innovation S
         z_hat = np.zeros_like(map_features)
