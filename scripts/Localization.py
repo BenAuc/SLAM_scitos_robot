@@ -182,8 +182,8 @@ class KalmanFilter:
         self.last_control_input = np.zeros((2, 1))
 
         # sensor noise model
-        # self.sensor_covariance = numpy.diag(rospy.get_param("/sensor_noise_model/variances"))
-        self.sensor_covariance = [1, 1, 1]
+        # self.sensor_covariance = np.diag(rospy.get_param("/sensor_noise_model/variances"))
+        self.sensor_covariance = np.diag([1, 1, 1])
         print("sensor covariance matrix : ", self.sensor_covariance)
 
     def predictionStep(self, control_input):
@@ -217,81 +217,113 @@ class KalmanFilter:
             candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
 
             *z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
-            where the axis 1 contains in order m_x, m_y, m_s
+            where the axis 1 contains in order r, phi, s
 
         @result: the method returns:
             *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
-            where the axis 1 contains in order m_x, m_y, m_s
+            where the axis 1 contains in order r, phi, s
 
             *jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
 
             *innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
 
-            *likelihood_scores: numpy array of dim (k, i) containing the likelihood that each k predicted feature
-            corresponds to either of the i observed features
-
             *self.last_covariance: covariance of state variables corrected by the measurements
 
             *self.last_state_mu: state estimate corrected by the measurements
         """
-        # initialize matrices of predicted measurements, jacobian H, innovation S
-        z_hat = np.zeros_like(map_features)
-        k = np.shape(map_features)[1]
-        jacobian_H = np.zeros_like((k, 3, 3))
-        innovation_S = np.zeros_like((k, 3, 3))
+        ### initialize matrices and indices ###
 
-        # compute r
-        z_hat[:, 0] = norm(map_features[:, :2], axis=1)
-        delta_x = map_features[:, 0] - self.last_state_mu[0]
-        delta_y = map_features[:, 1] - self.last_state_mu[1]
+        # number of predictions to be computed
+        number_pred = np.shape(map_features)[0]
+
+        # number of observations made
+        number_obs = np.shape(z_i)[0]
+
+        # z_hat: numpy array of dim (k, 3) containing the predicted measurements
+        z_hat = np.zeros_like(number_pred)
+
+        # jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
+        jacobian_H = np.zeros((number_pred, 3, 3))
+
+        # innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
+        innovation_S = np.zeros((number_pred, 3, 3))
+
+        ### compute predicted measurements and corresponding jacobian ###
+
+        # compute r of each predicted measurements
+        # norm-2 of the vector from robot's pose to landmark
+        delta_x = (map_features[:, 0] - self.last_state_mu[0])
+        delta_y = (map_features[:, 1] - self.last_state_mu[1])
+        z_hat[:, 0] = norm(np.array([delta_x, delta_y]), axis=0)
 
         # compute partial derivatives of r
         # dr/du_x = 0.5 * (1/r) * -2 * (m_x - u_x)
         # dr/du_y = 0.5 * (1/r) * -2 * (m_y - u_y)
-        jacobian_H[:, 0, 0] = -1 * numpy.divide(delta_x, z_hat[:, 0])
-        jacobian_H[:, 0, 1] = -1 * numpy.divide(delta_y, z_hat[:, 0])
+        jacobian_H[:, 0, 0] = -1 * np.divide(delta_x, z_hat[:, 0])
+        jacobian_H[:, 0, 1] = -1 * np.divide(delta_y, z_hat[:, 0])
 
         # compute phi
         z_hat[:, 1] = atan2(delta_y, delta_x) - self.last_state_mu[2]
 
-        # compute partial derivatives of phi
-        # as per the chain rule and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
+        # compute partial derivatives of phi as per the chain rule
+        # and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
         # dphi / du_x = datan2 / ddelta_x * ddelta_x / du_x = -1 * delta_y / (delta_x^2 + delta_y^2) * -1 = delta_y / (delta_x^2 + delta_y^2)
         # dphi / du_y = datan2 / ddelta_y * ddelta_y / du_y = delta_y / (delta_x^2 + delta_y^2) * -1 = -1 * dphi / du_x
         # dphi / du_psi = -1
-        jacobian_H[:, 1, 0] = numpy.divive(delta_y, numpy.power(delta_x, 2) + numpy.power(delta_y, 2))
+        jacobian_H[:, 1, 0] = np.divide(delta_y, np.power(delta_x, 2) + np.power(delta_y, 2))
         jacobian_H[:, 1, 1] = -1 * jacobian_H[:, 1, 0]
-        jacobian_H[:, 1, 1] = -1
+        jacobian_H[:, 1, 2] = -1
 
         # compute s
         z_hat[:, 2] = map_features[:, 2]
 
-        # compute innovation matrix
-        innovation_S = jacobian_H @ self.last_covariance @ jacobian_H.T + self.sensor_covariance
+        ### compute innovation matrices and initialize its inverse ###
 
-        # compute the likelihood score
-        # for each pair of observed feature and predicted feature a likelihood score is computed
-        likelihood_scores = np.power(2 * numpy.pi * matrix_det(innovation_S), -0.5)
-        delta_z = z_i - z_hat
-        innovation_S_inv = matrix_inv(innovation_S)
-        likelihood_scores *= np.exp(-0.5 * delta_z @ innovation_S_inv @ delta_z)
+        jacobian_H_transposed = np.transpose(jacobian_H, axes=[0, 2, 1])
+        innovation_S = jacobian_H @ self.last_covariance @ jacobian_H_transposed + self.sensor_covariance
+        innovation_S_inv = np.zeros_like(innovation_S)
 
-        # for each observed feature i the index of the predicted feature among the set of size is retained
-        max_likelihood_score = np.argmax(likelihood_scores, axis=0)
+        ### compute the likelihood score ###
 
-        # compute Kalman gain
-        kalman_gain = jacobian_H[max_likelihood_score, :, :].T @ innovation_S_inv[max_likelihood_score, :, :]
-        kalman_gain = self.last_covariance @ kalman_gain
+        # pre-compute scaling factor of formula upfront
+        determinant = matrix_det(innovation_S)
+        # if determinant = 0 we set to 1 to avoid division by zero
+        determinant[determinant == 0] = 1
+        scaling_factor = np.power(2 * np.pi * matrix_det(determinant), -0.5)
 
-        # correct pose
-        self.last_state_mu += np.sum(kalman_gain @ (z_i - z_hat[max_likelihood_score, :]))
+        # pre-compute inverted innovation matrix upfront
+        # catch error if matrix can't be inverted
+        for prediction in range(np.shape(z_hat)[0]):
+            try:
+                innovation_S_inv[prediction, :, :] = matrix_inv(innovation_S[prediction, :, :])
+            except numpy.linalg.LinAlgError:
+                innovation_S_inv[prediction, :, :] = np.eye(np.shape(innovation_S_inv)[1])
 
-        jacobian_H_filtered = jacobian_H[max_likelihood_score, :, :]
+        # for each observed feature a likelihood score is computed w.r.t. each predicted feature
+        # t
+        for observation_idx in range(number_obs):
+            scores = np.zeros_like(number_pred)
+            observation = z_i[observation_idx, :]
 
-        for i in range(np.shape(jacobian_H_filtered)[0]):
-            self.last_covariance = (np.eye(3, 3) - kalman_gain @ jacobian_H_filtered[i, :, :]) @ self.last_covariance
+            for prediction_idx in range(number_pred):
+                prediction = z_hat[prediction_idx, :]
+                delta_z = observation - prediction
 
-        return self.last_state_mu
+                # a set of likelihood scores is computed for each observation
+                scores[prediction_idx] = scaling_factor[prediction_idx] * \
+                                     np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
+
+            # for each observed feature the index of the most likely among k features is retained
+            most_likely_feature = np.argmax(scores)
+
+            # compute Kalman gain for this observation
+            kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T @ innovation_S_inv[most_likely_feature, :, :]
+
+            # correct pose and covariance with respect to this observation
+            self.last_state_mu += kalman_gain * (observation - z_hat[most_likely_feature, :])
+            self.last_covariance = (np.eye(3) - kalman_gain * jacobian_H[most_likely_feature, :, :]) @ self.last_covariance
+
+        return
 
 
 class Localization:
