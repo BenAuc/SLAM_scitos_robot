@@ -7,13 +7,17 @@ Reused by team 3 towards implementation of home assignment 6 Project 1 (SCITOS).
 @author: Christian Meurer
 @date: February 2022
 
-Update: complete of assignment 6
+Update: complete of task 7 - Localization 2
 Team: Scitos group 3
 Team members: Benoit Auclair; Michael Bryan
-Date: March 23, 2022
+Date: March 30, 2022
 """
-
+import numpy
 import numpy as np
+from numpy.linalg import norm as norm
+from numpy.linalg import det as matrix_det
+from numpy.linalg import inv as matrix_inv
+from numpy import arctan2 as atan2
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, Twist
@@ -34,7 +38,8 @@ class NoiseModel:
         @result: class initialization
         """
         # fetch noise model from ros parameter server
-        alpha = rospy.get_param("/noise_model/alpha")
+        # alpha = rospy.get_param("/noise_model/alpha")
+        alpha = [1, 1, 1, 1]
         self.alpha1 = alpha[0]
         self.alpha2 = alpha[1]
         self.alpha3 = alpha[2]
@@ -176,7 +181,12 @@ class KalmanFilter:
         # robot doesn't move at t = 0
         self.last_control_input = np.zeros((2, 1))
 
-    def predict(self, control_input):
+        # sensor noise model
+        # self.sensor_covariance = numpy.diag(rospy.get_param("/sensor_noise_model/variances"))
+        self.sensor_covariance = [1, 1, 1]
+        print("sensor covariance matrix : ", self.sensor_covariance)
+
+    def predictionStep(self, control_input):
         """
         This method predicts what the next system state will be.
         @param: control_input - numpy array of dim 2 x 1 containing:
@@ -198,7 +208,90 @@ class KalmanFilter:
         self.last_covariance = next_covariance
         self.last_control_input = control_input
 
-        return next_state_mu
+
+    def correctionStep(self, map_features, z_i):
+        """
+        This method predicts the features measured by the range finder given a pose estimate
+        @param:
+            *map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
+            candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
+
+            *z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
+            where the axis 1 contains in order m_x, m_y, m_s
+
+        @result: the method returns:
+            *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
+            where the axis 1 contains in order m_x, m_y, m_s
+
+            *jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
+
+            *innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
+
+            *likelihood_scores: numpy array of dim (k, i) containing the likelihood that each k predicted feature
+            corresponds to either of the i observed features
+
+            *self.last_covariance: covariance of state variables corrected by the measurements
+
+            *self.last_state_mu: state estimate corrected by the measurements
+        """
+        # initialize matrices of predicted measurements, jacobian H, innovation S
+        z_hat = np.zeros_like(map_features)
+        k = np.shape(map_features)[1]
+        jacobian_H = np.zeros_like((k, 3, 3))
+        innovation_S = np.zeros_like((k, 3, 3))
+
+        # compute r
+        z_hat[:, 0] = norm(map_features[:, :2], axis=1)
+        delta_x = map_features[:, 0] - self.last_state_mu[0]
+        delta_y = map_features[:, 1] - self.last_state_mu[1]
+
+        # compute partial derivatives of r
+        # dr/du_x = 0.5 * (1/r) * -2 * (m_x - u_x)
+        # dr/du_y = 0.5 * (1/r) * -2 * (m_y - u_y)
+        jacobian_H[:, 0, 0] = -1 * numpy.divide(delta_x, z_hat[:, 0])
+        jacobian_H[:, 0, 1] = -1 * numpy.divide(delta_y, z_hat[:, 0])
+
+        # compute phi
+        z_hat[:, 1] = atan2(delta_y, delta_x) - self.last_state_mu[2]
+
+        # compute partial derivatives of phi
+        # as per the chain rule and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
+        # dphi / du_x = datan2 / ddelta_x * ddelta_x / du_x = -1 * delta_y / (delta_x^2 + delta_y^2) * -1 = delta_y / (delta_x^2 + delta_y^2)
+        # dphi / du_y = datan2 / ddelta_y * ddelta_y / du_y = delta_y / (delta_x^2 + delta_y^2) * -1 = -1 * dphi / du_x
+        # dphi / du_psi = -1
+        jacobian_H[:, 1, 0] = numpy.divive(delta_y, numpy.power(delta_x, 2) + numpy.power(delta_y, 2))
+        jacobian_H[:, 1, 1] = -1 * jacobian_H[:, 1, 0]
+        jacobian_H[:, 1, 1] = -1
+
+        # compute s
+        z_hat[:, 2] = map_features[:, 2]
+
+        # compute innovation matrix
+        innovation_S = jacobian_H @ self.last_covariance @ jacobian_H.T + self.sensor_covariance
+
+        # compute the likelihood score
+        # for each pair of observed feature and predicted feature a likelihood score is computed
+        likelihood_scores = np.power(2 * numpy.pi * matrix_det(innovation_S), -0.5)
+        delta_z = z_i - z_hat
+        innovation_S_inv = matrix_inv(innovation_S)
+        likelihood_scores *= np.exp(-0.5 * delta_z @ innovation_S_inv @ delta_z)
+
+        # for each observed feature i the index of the predicted feature among the set of size is retained
+        max_likelihood_score = np.argmax(likelihood_scores, axis=0)
+
+        # compute Kalman gain
+        kalman_gain = jacobian_H[max_likelihood_score, :, :].T @ innovation_S_inv[max_likelihood_score, :, :]
+        kalman_gain = self.last_covariance @ kalman_gain
+
+        # correct pose
+        self.last_state_mu += np.sum(kalman_gain @ (z_i - z_hat[max_likelihood_score, :]))
+
+        jacobian_H_filtered = jacobian_H[max_likelihood_score, :, :]
+
+        for i in range(np.shape(jacobian_H_filtered)[0]):
+            self.last_covariance = (np.eye(3, 3) - kalman_gain @ jacobian_H_filtered[i, :, :]) @ self.last_covariance
+
+        return self.last_state_mu
 
 
 class Localization:
@@ -268,7 +361,7 @@ class Localization:
         @param: self
         @result: performs the predicton and update steps.
         """
-        pose = self.kalman_filter.predict(self.control_input)
+        pose = self.kalman_filter.predictionStep(self.control_input)
         ### Message editing ###
         self.predicted_state_msg.pose.position.x = pose[0,0]
         self.predicted_state_msg.pose.position.y = pose[1,0]
