@@ -299,8 +299,12 @@ class KalmanFilter:
             except numpy.linalg.LinAlgError:
                 innovation_S_inv[prediction, :, :] = np.eye(np.shape(innovation_S_inv)[1])
 
-        # for each observed feature a likelihood score is computed w.r.t. each predicted feature
-        # t
+        ### correction of state estimate and covariance ###
+        
+        # for each observed feature
+        # a likelihood score is computed w.r.t. each feature in the map
+        # the kalman gain is computed for this observation
+        # the pose and covariance are updated
         for observation_idx in range(number_obs):
             scores = np.zeros_like(number_pred)
             observation = z_i[observation_idx, :]
