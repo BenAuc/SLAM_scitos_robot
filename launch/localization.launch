@@ -6,6 +6,9 @@
         <arg name="headless" value="false"/>
     </include>
 
+    <include file="$(find laser_line_extraction)/launch/example.launch">
+    </include>
+
    <!-- Load to ros parameter servers the noise model on the control inputs-->
     <rosparam command="load"
         file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/noise_model.yaml"/>
@@ -14,7 +17,12 @@
     <rosparam command="load"
         file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/sensor_noise_model.yaml"/>
 
-    <!-- Load yaml file containing sensor model to ros parameter server-->
+   <!-- Load to ros parameter servers the map features-->
+    <rosparam command="load"
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map_features.yaml"
+        ns="/map_features"/>
+
+    <!-- Load yaml file containing sensor pose in robot framework to ros parameter server-->
     <rosparam command="load"
         file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/robot_parameters.yaml"
         ns="/robot_parameters"/>

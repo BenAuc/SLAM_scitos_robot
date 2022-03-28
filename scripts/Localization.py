@@ -21,8 +21,10 @@ from numpy import arctan2 as atan2
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, Twist
+from visualization_msgs.msg import Marker
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Header
+
 
 class NoiseModel:
     """
@@ -38,8 +40,8 @@ class NoiseModel:
         @result: class initialization
         """
         # fetch noise model from ros parameter server
-        # alpha = rospy.get_param("/noise_model/alpha")
-        alpha = [1, 1, 1, 1]
+        alpha = rospy.get_param("/noise_model/alpha")
+        # alpha = [1, 1, 1, 1]
         self.alpha1 = alpha[0]
         self.alpha2 = alpha[1]
         self.alpha3 = alpha[2]
@@ -196,7 +198,8 @@ class KalmanFilter:
             *next_state - numpy array of dim 3 x 1 containing the 3 tracked variables (x,y,psi)
         """
         # compute the next state i.e. next robot pose knowing current control inputs
-        next_state_mu, next_error, jacobian_G, jacobian_V = self.motion_model.predictPose(control_input, self.last_state_mu)
+        next_state_mu, next_error, jacobian_G, jacobian_V = self.motion_model.predictPose(control_input,
+                                                                                          self.last_state_mu)
 
         # compute covariance on the state transition probability
         covariance_R = jacobian_V @ next_error @ jacobian_V.T
@@ -208,125 +211,128 @@ class KalmanFilter:
         self.last_covariance = next_covariance
         self.last_control_input = control_input
 
-
-    def correctionStep(self, map_features, z_i):
-        """
-        This method corrects the state estimate and covariance from the motion model based on current measurements
-         @param:map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
-            candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
-
-         @param:z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
-            where the axis 1 contains in order r, phi, s
-
-        This method computes the following:
-            *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
-            where the axis 1 contains in order r, phi, s
-
-            *jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
-
-            *innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
-
-            *self.last_covariance: covariance of state variables corrected by the measurements
-
-        @result: the method returns self.last_state_mu: the state estimate corrected by the measurements
-        """
-        ### initialize matrices and indices ###
-
-        # number of predictions to be computed
-        number_pred = np.shape(map_features)[0]
-
-        # number of observations made
-        number_obs = np.shape(z_i)[0]
-
-        # z_hat: numpy array of dim (k, 3) containing the predicted measurements
-        z_hat = np.zeros_like(number_pred)
-
-        # jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
-        jacobian_H = np.zeros((number_pred, 3, 3))
-
-        # innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
-        innovation_S = np.zeros((number_pred, 3, 3))
-
-        ### compute predicted measurements and corresponding jacobian ###
-
-        # compute r of each predicted measurements
-        # norm-2 of the vector from robot's pose to landmark
-        delta_x = (map_features[:, 0] - self.last_state_mu[0])
-        delta_y = (map_features[:, 1] - self.last_state_mu[1])
-        z_hat[:, 0] = norm(np.array([delta_x, delta_y]), axis=0)
-
-        # compute partial derivatives of r
-        # dr/du_x = 0.5 * (1/r) * -2 * (m_x - u_x)
-        # dr/du_y = 0.5 * (1/r) * -2 * (m_y - u_y)
-        jacobian_H[:, 0, 0] = -1 * np.divide(delta_x, z_hat[:, 0])
-        jacobian_H[:, 0, 1] = -1 * np.divide(delta_y, z_hat[:, 0])
-
-        # compute phi
-        z_hat[:, 1] = atan2(delta_y, delta_x) - self.last_state_mu[2]
-
-        # compute partial derivatives of phi as per the chain rule
-        # and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
-        # dphi / du_x = datan2 / ddelta_x * ddelta_x / du_x = -1 * delta_y / (delta_x^2 + delta_y^2) * -1 = delta_y / (delta_x^2 + delta_y^2)
-        # dphi / du_y = datan2 / ddelta_y * ddelta_y / du_y = delta_y / (delta_x^2 + delta_y^2) * -1 = -1 * dphi / du_x
-        # dphi / du_psi = -1
-        jacobian_H[:, 1, 0] = np.divide(delta_y, np.power(delta_x, 2) + np.power(delta_y, 2))
-        jacobian_H[:, 1, 1] = -1 * jacobian_H[:, 1, 0]
-        jacobian_H[:, 1, 2] = -1
-
-        # compute s
-        z_hat[:, 2] = map_features[:, 2]
-
-        ### compute innovation matrices and initialize its inverse ###
-
-        jacobian_H_transposed = np.transpose(jacobian_H, axes=[0, 2, 1])
-        innovation_S = jacobian_H @ self.last_covariance @ jacobian_H_transposed + self.sensor_covariance
-        innovation_S_inv = np.zeros_like(innovation_S)
-
-        ### compute the likelihood score ###
-
-        # pre-compute scaling factor of formula upfront
-        determinant = matrix_det(innovation_S)
-        # if determinant = 0 we set to 1 to avoid division by zero
-        determinant[determinant == 0] = 1
-        scaling_factor = np.power(2 * np.pi * matrix_det(determinant), -0.5)
-
-        # pre-compute inverted innovation matrix upfront
-        # catch error if matrix can't be inverted
-        for prediction in range(np.shape(z_hat)[0]):
-            try:
-                innovation_S_inv[prediction, :, :] = matrix_inv(innovation_S[prediction, :, :])
-            except numpy.linalg.LinAlgError:
-                innovation_S_inv[prediction, :, :] = np.eye(np.shape(innovation_S_inv)[1])
-
-        ### correction of state estimate and covariance ###
-
-        # for each observed feature
-        # a likelihood score is computed w.r.t. each feature in the map
-        # the kalman gain is computed for this observation
-        # the pose and covariance are updated
-        for observation_idx in range(number_obs):
-            scores = np.zeros_like(number_pred)
-            observation = z_i[observation_idx, :]
-
-            for prediction_idx in range(number_pred):
-                prediction = z_hat[prediction_idx, :]
-                delta_z = observation - prediction
-
-                # a set of likelihood scores is computed for each observation
-                scores[prediction_idx] = scaling_factor[prediction_idx] * \
-                                     np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
-
-            # for each observed feature the index of the most likely among k features is retained
-            most_likely_feature = np.argmax(scores)
-
-            # compute Kalman gain for this observation
-            kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T @ innovation_S_inv[most_likely_feature, :, :]
-
-            # correct pose and covariance with respect to this observation
-            self.last_state_mu += kalman_gain * (observation - z_hat[most_likely_feature, :])
-            self.last_covariance = (np.eye(3) - kalman_gain * jacobian_H[most_likely_feature, :, :]) @ self.last_covariance
-
         return self.last_state_mu
+
+    # def correctionStep(self, map_features, z_i):
+    #     """
+    #     This method corrects the state estimate and covariance from the motion model based on current measurements
+    #      @param:map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
+    #         candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
+    #
+    #      @param:z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
+    #         where the axis 1 contains in order r, phi, s
+    #
+    #     This method computes the following:
+    #         *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
+    #         where the axis 1 contains in order r, phi, s
+    #
+    #         *jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
+    #
+    #         *innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
+    #
+    #         *self.last_covariance: covariance of state variables corrected by the measurements
+    #
+    #     @result: the method returns self.last_state_mu: the state estimate corrected by the measurements
+    #     """
+    #     ### initialize matrices and indices ###
+    #
+    #     # number of predictions to be computed
+    #     number_pred = np.shape(map_features)[0]
+    #
+    #     # number of observations made
+    #     number_obs = np.shape(z_i)[0]
+    #
+    #     # z_hat: numpy array of dim (k, 3) containing the predicted measurements
+    #     z_hat = np.zeros_like(number_pred)
+    #
+    #     # jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
+    #     jacobian_H = np.zeros((number_pred, 3, 3))
+    #
+    #     # innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
+    #     innovation_S = np.zeros((number_pred, 3, 3))
+    #
+    #     ### compute predicted measurements and corresponding jacobian ###
+    #
+    #     # compute r of each predicted measurements
+    #     # norm-2 of the vector from robot's pose to landmark
+    #     delta_x = (map_features[:, 0] - self.last_state_mu[0])
+    #     delta_y = (map_features[:, 1] - self.last_state_mu[1])
+    #     z_hat[:, 0] = norm(np.array([delta_x, delta_y]), axis=0)
+    #
+    #     # compute partial derivatives of r
+    #     # dr/du_x = 0.5 * (1/r) * -2 * (m_x - u_x)
+    #     # dr/du_y = 0.5 * (1/r) * -2 * (m_y - u_y)
+    #     jacobian_H[:, 0, 0] = -1 * np.divide(delta_x, z_hat[:, 0])
+    #     jacobian_H[:, 0, 1] = -1 * np.divide(delta_y, z_hat[:, 0])
+    #
+    #     # compute phi
+    #     z_hat[:, 1] = atan2(delta_y, delta_x) - self.last_state_mu[2]
+    #
+    #     # compute partial derivatives of phi as per the chain rule
+    #     # and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
+    #     # dphi / du_x = datan2 / ddelta_x * ddelta_x / du_x = -1 * delta_y / (delta_x^2 + delta_y^2) * -1 = delta_y / (delta_x^2 + delta_y^2)
+    #     # dphi / du_y = datan2 / ddelta_y * ddelta_y / du_y = delta_y / (delta_x^2 + delta_y^2) * -1 = -1 * dphi / du_x
+    #     # dphi / du_psi = -1
+    #     jacobian_H[:, 1, 0] = np.divide(delta_y, np.power(delta_x, 2) + np.power(delta_y, 2))
+    #     jacobian_H[:, 1, 1] = -1 * jacobian_H[:, 1, 0]
+    #     jacobian_H[:, 1, 2] = -1
+    #
+    #     # compute s
+    #     z_hat[:, 2] = map_features[:, 2]
+    #
+    #     ### compute innovation matrices and initialize its inverse ###
+    #
+    #     jacobian_H_transposed = np.transpose(jacobian_H, axes=[0, 2, 1])
+    #     innovation_S = jacobian_H @ self.last_covariance @ jacobian_H_transposed + self.sensor_covariance
+    #     innovation_S_inv = np.zeros_like(innovation_S)
+    #
+    #     ### compute the likelihood score ###
+    #
+    #     # pre-compute scaling factor of formula upfront
+    #     determinant = matrix_det(innovation_S)
+    #     # if determinant = 0 we set to 1 to avoid division by zero
+    #     determinant[determinant == 0] = 1
+    #     scaling_factor = np.power(2 * np.pi * matrix_det(determinant), -0.5)
+    #
+    #     # pre-compute inverted innovation matrix upfront
+    #     # catch error if matrix can't be inverted
+    #     for prediction in range(np.shape(z_hat)[0]):
+    #         try:
+    #             innovation_S_inv[prediction, :, :] = matrix_inv(innovation_S[prediction, :, :])
+    #         except np.linalg.LinAlgError:
+    #             innovation_S_inv[prediction, :, :] = np.eye(np.shape(innovation_S_inv)[1])
+    #
+    #     ### correction of state estimate and covariance ###
+    #
+    #     # for each observed feature
+    #     # a likelihood score is computed w.r.t. each feature in the map
+    #     # the kalman gain is computed for this observation
+    #     # the pose and covariance are updated
+    #     for observation_idx in range(number_obs):
+    #         scores = np.zeros_like(number_pred)
+    #         observation = z_i[observation_idx, :]
+    #
+    #         for prediction_idx in range(number_pred):
+    #             prediction = z_hat[prediction_idx, :]
+    #             delta_z = observation - prediction
+    #
+    #             # a set of likelihood scores is computed for each observation
+    #             scores[prediction_idx] = scaling_factor[prediction_idx] * \
+    #                                      np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
+    #
+    #         # for each observed feature the index of the most likely among k features is retained
+    #         most_likely_feature = np.argmax(scores)
+    #
+    #         # compute Kalman gain for this observation
+    #         kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T \
+    #                       @ innovation_S_inv[most_likely_feature, :, :]
+    #
+    #         # correct pose and covariance with respect to this observation
+    #         self.last_state_mu += kalman_gain * (observation - z_hat[most_likely_feature, :])
+    #         self.last_covariance = (np.eye(3) - kalman_gain * jacobian_H[most_likely_feature, :, :]) \
+    #                                @ self.last_covariance
+    #
+    #     return self.last_state_mu
 
 
 class Localization:
@@ -336,6 +342,7 @@ class Localization:
     @input: odometry as nav_msgs Odometry message
     @output: pose as geometry_msgs PoseStamped message
     """
+
     def __init__(self, dt):
         """
         class initialization
@@ -346,18 +353,22 @@ class Localization:
                  set up publishers and subscribers
         """
         ### timing ###
-        self.frequency = 20 # [Hz]
-        self.dt = 1/self.frequency # [s]
-        self.rate = rospy.Rate(self.frequency) # timing object
+        self.frequency = 20  # [Hz]
+        self.dt = 1 / self.frequency  # [s]
+        self.rate = rospy.Rate(self.frequency)  # timing object
 
         ### subscribers ###
         self.ground_truth_sub = rospy.Subscriber("/ground_truth", Odometry, self.groundTruthCallback)
         self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odometryCallback)
         self.control_input_sub = rospy.Subscriber("/cmd_vel", Twist, self.controlInputCallback)
-                                                  
+
         ### publishers ###
-        self.pose_pub = rospy.Publisher("/robot_pose", PoseStamped, queue_size=1) # queue_size=1 => only the newest map available
-        
+        self.pose_pub = rospy.Publisher("/robot_pose", PoseStamped,
+                                        queue_size=1)  # queue_size=1 => only the newest map available
+
+        self.map_features_pub = rospy.Publisher("/map_features", Marker,
+                                        queue_size=1)  # queue_size=1 => only the newest map available
+
         ### initialize KF class ###
         # could be initialized in first run of ground_truth callback
         # now it should be  -x 0 -y 0 -z 0, see line 31 in scitos.launch
@@ -365,11 +376,11 @@ class Localization:
         self.kalman_filter = KalmanFilter(self.dt, initial_pose)
 
         ### initialization of class variables ###
-        self.robot_pose = None 
-        self.odom_msg = None # input
-        self.ground_truth_msg = None # input
-        self.control_input = np.zeros((2,1)) # [v, w]' 
-        
+        self.robot_pose = None
+        self.odom_msg = None  # input
+        self.ground_truth_msg = None  # input
+        self.control_input = np.zeros((2, 1))  # [v, w]'
+
         ### predicted pose message ###
         self.predicted_state_msg = PoseStamped()
         self.predicted_state_msg.header = Header()
@@ -377,7 +388,18 @@ class Localization:
         self.predicted_state_msg.pose = Pose()
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
-        
+
+        ### message to display the map features ###
+        self.map_features_marker_msg = Marker()
+        self.map_features_marker_msg.points = Point()
+
+        ### fetch and publish map features as Markers in Rviz ###
+        self.map_features = rospy.get_param("/map_features/")
+        self.map_features_pub.publish(self.map_features_marker_msg)
+            # .publish(self.map_features_marker_msg)
+        # print(self.map_features)
+        # print(len(self.map_features))
+
     def run(self):
         """
         Main loop of class.
@@ -390,6 +412,7 @@ class Localization:
                 self.step()
             self.rate.sleep()
 
+
     def step(self):
         """
         Perform an iteration of the localization loop.
@@ -398,8 +421,8 @@ class Localization:
         """
         pose = self.kalman_filter.predictionStep(self.control_input)
         ### Message editing ###
-        self.predicted_state_msg.pose.position.x = pose[0,0]
-        self.predicted_state_msg.pose.position.y = pose[1,0]
+        self.predicted_state_msg.pose.position.x = pose[0, 0]
+        self.predicted_state_msg.pose.position.y = pose[1, 0]
         q = quaternion_from_euler(pose[2, 0], 0, 0, 'rzyx')
         self.predicted_state_msg.pose.orientation.x = q[0]
         self.predicted_state_msg.pose.orientation.y = q[1]
@@ -434,7 +457,7 @@ class Localization:
         @result: internal update of ground truth
         """
         self.ground_truth_msg = data
-        
+
     def controlInputCallback(self, data):
         """
         gets twist message from teleop_key.py
@@ -445,9 +468,43 @@ class Localization:
         self.control_input = np.array([[data.linear.x],
                                        [data.angular.z]])
 
+    def displayMapFeatures(self):
+
+        # {
+        #     marker_msg.ns = "line_extraction";
+        # marker_msg.id = 0;
+        # marker_msg.type = visualization_msgs::Marker::LINE_LIST;
+        # marker_msg.scale.x = 0.1;
+        # marker_msg.color.r = 1.0;
+        # marker_msg.color.g = 0.0;
+        # marker_msg.color.b = 0.0;
+        # marker_msg.color.a = 1.0;
+        # for (std::vector < Line >::const_iterator cit = lines.begin(); cit != lines.end(); ++cit)
+        # {
+        # geometry_msgs::
+        #     Point
+        # p_start;
+        # p_start.x = cit->getStart()[0];
+        # p_start.y = cit->getStart()[1];
+        # p_start.z = 0;
+        # marker_msg.points.push_back(p_start);
+        # geometry_msgs::Point
+        # p_end;
+        # p_end.x = cit->getEnd()[0];
+        # p_end.y = cit->getEnd()[1];
+        # p_end.z = 0;
+        # marker_msg.points.push_back(p_end);
+        # }
+        # marker_msg.header.frame_id = frame_id_;
+        # marker_msg.header.stamp = ros::Time::now();
+        # }
+
+        pass
+
+
 if __name__ == '__main__':
     # initialize node and name it
-    rospy.init_node("LocalizationNode") # should this be "LocalizationNode" right ? I changed it
+    rospy.init_node("LocalizationNode")  # should this be "LocalizationNode" right ? I changed it
     # go to class that provides all the functionality
     # and check for errors
     try:
