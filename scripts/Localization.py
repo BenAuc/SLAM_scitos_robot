@@ -424,7 +424,7 @@ class Localization:
         self.map_features_marker_msg.color.b = 0.0
         self.map_features_marker_msg.color.a = 1.0
         self.map_features_marker_msg.header = Header()
-        self.map_features_marker_msg.header.frame_id = "/world"
+        self.map_features_marker_msg.header.frame_id = "world"
         self.map_features_marker_msg.header.stamp = rospy.get_rostime()
         # self.map_features_marker_msg.points = Point()
 
@@ -562,6 +562,7 @@ class Localization:
                                                axes='szyx')[0]
         # extract robot pose
         self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
+        self.map_features_pub.publish(self.map_features_marker_msg)
 
     def groundTruthCallback(self, data):
         """
