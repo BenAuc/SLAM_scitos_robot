@@ -23,7 +23,8 @@ from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, Twist
 from visualization_msgs.msg import Marker
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Header
+from std_msgs.msg import Header, ColorRGBA
+from coordinate_transformations import grid_to_world
 
 
 class NoiseModel:
@@ -84,14 +85,16 @@ class MotionModel:
 
         # initialization of the Jacobians
         self.jacobian_G = np.zeros((3, 3))
+        self.jacobian_V = np.zeros((3, 2))
 
         # the diagonal is always one
         self.jacobian_G[0, 0] = 1
         self.jacobian_G[1, 1] = 1
         self.jacobian_G[2, 2] = 1
 
-        self.jacobian_V = np.zeros((3, 2))
-        # self.threshold_div_zero = 1e-2
+        # keep track of control input history to calculate acceleration
+        self.last_control_input = np.zeros((2, 1))
+
 
     def predictPose(self, control_input, last_pose):
         """
@@ -107,10 +110,13 @@ class MotionModel:
         v = control_input[0]
         w = control_input[1]
 
+        # estimate acceleration
+        a = control_input - self.last_control_input
+
         # calculate the step magnitude
-        increment = np.array([v * self.dt * np.cos(last_pose[2] + w * self.dt / 2),
-                              v * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
-                              w * self.dt], float).reshape(3, 1)
+        increment = np.array([(v + a[0, 0] * self.dt) * self.dt * np.cos(last_pose[2] + w * self.dt / 2),
+                              (v + a[0, 0] * self.dt) * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
+                              w * self.dt + a[1, 0] * np.power(self.dt, 2)], float).reshape(3, 1)
 
         # add step size to previous pose
         next_pose = last_pose + increment.reshape(3, 1)
@@ -120,6 +126,8 @@ class MotionModel:
 
         # compute the jacobians
         self.computeJacobian(v, w, last_pose)
+
+        self.last_control_input = control_input
 
         return next_pose, next_error, self.jacobian_G, self.jacobian_V
 
@@ -389,16 +397,121 @@ class Localization:
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
 
-        ### message to display the map features ###
-        self.map_features_marker_msg = Marker()
-        self.map_features_marker_msg.points = Point()
-
         ### fetch and publish map features as Markers in Rviz ###
         self.map_features = rospy.get_param("/map_features/")
+        print("start x : ", int(self.map_features["start_x"][0]))
+
+        ### publish the map features ###
+
+        # get map parameters
+        self.width = rospy.get_param("/map/width")
+        self.height = rospy.get_param("/map/height")
+        self.resolution = rospy.get_param("/map/resolution")
+        self.map_origin = rospy.get_param("/map/origin")
+
+        # initialize the marker message and publish it
+        self.map_features_marker_msg = Marker()
+        # self.displayMapFeatures()
+
+        # initialize display settings
+        self.map_features_marker_msg.ns = "line_extraction"
+        self.map_features_marker_msg.id = 0
+        self.map_features_marker_msg.type = 5  # display marker as line list
+        self.map_features_marker_msg.scale.x = 0.1
+        self.map_features_marker_msg.color = ColorRGBA()
+        self.map_features_marker_msg.color.r = 1.0
+        self.map_features_marker_msg.color.g = 0.0
+        self.map_features_marker_msg.color.b = 0.0
+        self.map_features_marker_msg.color.a = 1.0
+        self.map_features_marker_msg.header = Header()
+        self.map_features_marker_msg.header.frame_id = "/world"
+        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
+        # self.map_features_marker_msg.points = Point()
+
+        print("nr of points : ", len(self.map_features["start_x"]))
+
+        for point in range(0, len(self.map_features["start_x"])):
+            # point = 0
+            print("point nr :", point)
+            start_point = grid_to_world(int(self.map_features["start_x"][point]),
+                                        int(self.map_features["start_y"][point]),
+                                        self.map_origin[0], self.map_origin[1], self.width, self.height,
+                                        self.resolution)
+
+            print("new start point : ", start_point)
+            end_point = grid_to_world(int(self.map_features["end_x"][point]), int(self.map_features["end_y"][point]),
+                                      self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
+
+            p_start = Point()
+            p_start.x = start_point[0]
+            p_start.y = start_point[1]
+            p_start.z = 0
+            self.map_features_marker_msg.points.append(p_start)
+            print("updated list of points : ", self.map_features_marker_msg.points)
+
+            p_end = Point()
+            p_end.x = end_point[0]
+            p_end.y = end_point[1]
+            p_end.z = 0
+            self.map_features_marker_msg.points.append(p_end)
+
+        print("last end point : ", self.map_features_marker_msg.points[-1])
+
         self.map_features_pub.publish(self.map_features_marker_msg)
+        # self.map_features_marker_msg.points = Point()
+        # self.map_features_marker_msg.color = ColorRGBA()
+
             # .publish(self.map_features_marker_msg)
         # print(self.map_features)
         # print(len(self.map_features))
+
+
+    def displayMapFeatures(self):
+        pass
+        # # initialize display settings
+        # self.map_features_marker_msg.ns = "line_extraction"
+        # self.map_features_marker_msg.id = 0
+        # self.map_features_marker_msg.type = 5 # display marker as line list
+        # self.map_features_marker_msg.scale.x = 0.2
+        # self.map_features_marker_msg.color = ColorRGBA()
+        # self.map_features_marker_msg.color.r = 1.0
+        # self.map_features_marker_msg.color.g = 0.0
+        # self.map_features_marker_msg.color.b = 0.0
+        # self.map_features_marker_msg.color.a = 1.0
+        # self.map_features_marker_msg.header = Header()
+        # self.map_features_marker_msg.header.frame_id = "/world"
+        # self.map_features_marker_msg.header.stamp = rospy.get_rostime()
+        # # self.map_features_marker_msg.points = Point()
+        #
+        # print("nr of points : ", len(self.map_features["start_x"]))
+        #
+        # for point in range(0, len(self.map_features["start_x"])):
+        #     # point = 0
+        #     print("point nr :", point)
+        #     start_point = grid_to_world(int(self.map_features["start_x"][point]), int(self.map_features["start_y"][point]),
+        #                   self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
+        #
+        #     print("new start point : ", start_point)
+        #     end_point = grid_to_world(int(self.map_features["end_x"][point]), int(self.map_features["end_y"][point]),
+        #                                 self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
+        #
+        #     p_start = Point()
+        #     p_start.x = start_point[0]
+        #     p_start.y = start_point[1]
+        #     p_start.z = 0
+        #     self.map_features_marker_msg.points.append(p_start)
+        #     print("updated list of points : ", self.map_features_marker_msg.points)
+        #
+        #     p_end = Point()
+        #     p_end.x = end_point[0]
+        #     p_end.y = end_point[1]
+        #     p_end.z = 0
+        #     self.map_features_marker_msg.points.append(p_end)
+        #
+        # print("last end point : ", self.map_features_marker_msg.points[-1])
+        #
+        # self.map_features_pub.publish(self.map_features_marker_msg)
+
 
     def run(self):
         """
@@ -467,39 +580,6 @@ class Localization:
         # extract linear and angular velocities
         self.control_input = np.array([[data.linear.x],
                                        [data.angular.z]])
-
-    def displayMapFeatures(self):
-
-        # {
-        #     marker_msg.ns = "line_extraction";
-        # marker_msg.id = 0;
-        # marker_msg.type = visualization_msgs::Marker::LINE_LIST;
-        # marker_msg.scale.x = 0.1;
-        # marker_msg.color.r = 1.0;
-        # marker_msg.color.g = 0.0;
-        # marker_msg.color.b = 0.0;
-        # marker_msg.color.a = 1.0;
-        # for (std::vector < Line >::const_iterator cit = lines.begin(); cit != lines.end(); ++cit)
-        # {
-        # geometry_msgs::
-        #     Point
-        # p_start;
-        # p_start.x = cit->getStart()[0];
-        # p_start.y = cit->getStart()[1];
-        # p_start.z = 0;
-        # marker_msg.points.push_back(p_start);
-        # geometry_msgs::Point
-        # p_end;
-        # p_end.x = cit->getEnd()[0];
-        # p_end.y = cit->getEnd()[1];
-        # p_end.z = 0;
-        # marker_msg.points.push_back(p_end);
-        # }
-        # marker_msg.header.frame_id = frame_id_;
-        # marker_msg.header.stamp = ros::Time::now();
-        # }
-
-        pass
 
 
 if __name__ == '__main__':

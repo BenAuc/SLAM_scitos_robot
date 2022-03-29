@@ -55,7 +55,7 @@ if linesFromBaW is not None:
         end_x = []
         end_y = []
 
-        for idx in range(0, len(linesFromBaW)):
+        for idx in range(0, 1):
             l = linesFromBaW[idx][0]
             start_x.append(str(l[0]))
             start_y.append(str(l[1]))
@@ -75,24 +75,24 @@ if linesFromBaW is not None:
         documents = yaml.dump(line_dict, file)
 
         
-if linesFromEdges is not None:
-    all_lines = dict
-    for i in range(0, len(linesFromEdges)):
-        print("coordinates line: ", i)
-
-        l = linesFromEdges[i][0]
-        print("coordinates start point: ", (l[0], l[1]))
-        print("coordinates end point: ", (l[2], l[3]))
-        cv.line(cdst1, (l[0], l[1]), (l[2], l[3]), (0, 0, 255), 2, cv.LINE_AA)
-
-
-# cv.imshow("Source", src)
-# cv.imshow("Detected Lines (in red) - Standard Hough Line Transform", cdst)
-cv.imshow("Detected Lines - black and white img", cdst0)
-cv.imshow("Detected Lines - edges", cdst1)
-
-# plt.imshow(cdst0)
-# plt.show()
-
-cv.waitKey(0)
-cv.destroyAllWindows()
+# if linesFromEdges is not None:
+#     all_lines = dict
+#     for i in range(0, len(linesFromEdges)):
+#         print("coordinates line: ", i)
+#
+#         l = linesFromEdges[i][0]
+#         print("coordinates start point: ", (l[0], l[1]))
+#         print("coordinates end point: ", (l[2], l[3]))
+#         cv.line(cdst1, (l[0], l[1]), (l[2], l[3]), (0, 0, 255), 2, cv.LINE_AA)
+#
+#
+# # cv.imshow("Source", src)
+# # cv.imshow("Detected Lines (in red) - Standard Hough Line Transform", cdst)
+# cv.imshow("Detected Lines - black and white img", cdst0)
+# cv.imshow("Detected Lines - edges", cdst1)
+#
+# # plt.imshow(cdst0)
+# # plt.show()
+#
+# cv.waitKey(0)
+# cv.destroyAllWindows()

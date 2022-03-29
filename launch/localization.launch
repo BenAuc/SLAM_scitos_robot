@@ -9,6 +9,11 @@
     <include file="$(find laser_line_extraction)/launch/example.launch">
     </include>
 
+    <!-- Load yaml file containing map metadata to ros parameter server-->
+    <rosparam command="load"
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map.yaml"
+        ns="/map"/>
+
    <!-- Load to ros parameter servers the noise model on the control inputs-->
     <rosparam command="load"
         file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/noise_model.yaml"/>
