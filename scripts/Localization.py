@@ -466,8 +466,8 @@ class Localization:
         # print(len(self.map_features))
 
 
-    def displayMapFeatures(self):
-        pass
+    # def displayMapFeatures(self):
+    #     pass
         # # initialize display settings
         # self.map_features_marker_msg.ns = "line_extraction"
         # self.map_features_marker_msg.id = 0
