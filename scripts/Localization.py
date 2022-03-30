@@ -222,126 +222,126 @@ class KalmanFilter:
 
         return self.last_state_mu
 
-    # def correctionStep(self, map_features, z_i):
-    #     """
-    #     This method corrects the state estimate and covariance from the motion model based on current measurements
-    #      @param:map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
-    #         candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
-    #
-    #      @param:z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
-    #         where the axis 1 contains in order r, phi, s
-    #
-    #     This method computes the following:
-    #         *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
-    #         where the axis 1 contains in order r, phi, s
-    #
-    #         *jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
-    #
-    #         *innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
-    #
-    #         *self.last_covariance: covariance of state variables corrected by the measurements
-    #
-    #     @result: the method returns self.last_state_mu: the state estimate corrected by the measurements
-    #     """
-    #     ### initialize matrices and indices ###
-    #
-    #     # number of predictions to be computed
-    #     number_pred = np.shape(map_features)[0]
-    #
-    #     # number of observations made
-    #     number_obs = np.shape(z_i)[0]
-    #
-    #     # z_hat: numpy array of dim (k, 3) containing the predicted measurements
-    #     z_hat = np.zeros_like(number_pred)
-    #
-    #     # jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
-    #     jacobian_H = np.zeros((number_pred, 3, 3))
-    #
-    #     # innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
-    #     innovation_S = np.zeros((number_pred, 3, 3))
-    #
-    #     ### compute predicted measurements and corresponding jacobian ###
-    #
-    #     # compute r of each predicted measurements
-    #     # norm-2 of the vector from robot's pose to landmark
-    #     delta_x = (map_features[:, 0] - self.last_state_mu[0])
-    #     delta_y = (map_features[:, 1] - self.last_state_mu[1])
-    #     z_hat[:, 0] = norm(np.array([delta_x, delta_y]), axis=0)
-    #
-    #     # compute partial derivatives of r
-    #     # dr/du_x = 0.5 * (1/r) * -2 * (m_x - u_x)
-    #     # dr/du_y = 0.5 * (1/r) * -2 * (m_y - u_y)
-    #     jacobian_H[:, 0, 0] = -1 * np.divide(delta_x, z_hat[:, 0])
-    #     jacobian_H[:, 0, 1] = -1 * np.divide(delta_y, z_hat[:, 0])
-    #
-    #     # compute phi
-    #     z_hat[:, 1] = atan2(delta_y, delta_x) - self.last_state_mu[2]
-    #
-    #     # compute partial derivatives of phi as per the chain rule
-    #     # and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
-    #     # dphi / du_x = datan2 / ddelta_x * ddelta_x / du_x = -1 * delta_y / (delta_x^2 + delta_y^2) * -1 = delta_y / (delta_x^2 + delta_y^2)
-    #     # dphi / du_y = datan2 / ddelta_y * ddelta_y / du_y = delta_y / (delta_x^2 + delta_y^2) * -1 = -1 * dphi / du_x
-    #     # dphi / du_psi = -1
-    #     jacobian_H[:, 1, 0] = np.divide(delta_y, np.power(delta_x, 2) + np.power(delta_y, 2))
-    #     jacobian_H[:, 1, 1] = -1 * jacobian_H[:, 1, 0]
-    #     jacobian_H[:, 1, 2] = -1
-    #
-    #     # compute s
-    #     z_hat[:, 2] = map_features[:, 2]
-    #
-    #     ### compute innovation matrices and initialize its inverse ###
-    #
-    #     jacobian_H_transposed = np.transpose(jacobian_H, axes=[0, 2, 1])
-    #     innovation_S = jacobian_H @ self.last_covariance @ jacobian_H_transposed + self.sensor_covariance
-    #     innovation_S_inv = np.zeros_like(innovation_S)
-    #
-    #     ### compute the likelihood score ###
-    #
-    #     # pre-compute scaling factor of formula upfront
-    #     determinant = matrix_det(innovation_S)
-    #     # if determinant = 0 we set to 1 to avoid division by zero
-    #     determinant[determinant == 0] = 1
-    #     scaling_factor = np.power(2 * np.pi * matrix_det(determinant), -0.5)
-    #
-    #     # pre-compute inverted innovation matrix upfront
-    #     # catch error if matrix can't be inverted
-    #     for prediction in range(np.shape(z_hat)[0]):
-    #         try:
-    #             innovation_S_inv[prediction, :, :] = matrix_inv(innovation_S[prediction, :, :])
-    #         except np.linalg.LinAlgError:
-    #             innovation_S_inv[prediction, :, :] = np.eye(np.shape(innovation_S_inv)[1])
-    #
-    #     ### correction of state estimate and covariance ###
-    #
-    #     # for each observed feature
-    #     # a likelihood score is computed w.r.t. each feature in the map
-    #     # the kalman gain is computed for this observation
-    #     # the pose and covariance are updated
-    #     for observation_idx in range(number_obs):
-    #         scores = np.zeros_like(number_pred)
-    #         observation = z_i[observation_idx, :]
-    #
-    #         for prediction_idx in range(number_pred):
-    #             prediction = z_hat[prediction_idx, :]
-    #             delta_z = observation - prediction
-    #
-    #             # a set of likelihood scores is computed for each observation
-    #             scores[prediction_idx] = scaling_factor[prediction_idx] * \
-    #                                      np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
-    #
-    #         # for each observed feature the index of the most likely among k features is retained
-    #         most_likely_feature = np.argmax(scores)
-    #
-    #         # compute Kalman gain for this observation
-    #         kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T \
-    #                       @ innovation_S_inv[most_likely_feature, :, :]
-    #
-    #         # correct pose and covariance with respect to this observation
-    #         self.last_state_mu += kalman_gain * (observation - z_hat[most_likely_feature, :])
-    #         self.last_covariance = (np.eye(3) - kalman_gain * jacobian_H[most_likely_feature, :, :]) \
-    #                                @ self.last_covariance
-    #
-    #     return self.last_state_mu
+    def correctionStep(self, map_features, z_i):
+        """
+        This method corrects the state estimate and covariance from the motion model based on current measurements
+         @param:map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
+            candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
+
+         @param:z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
+            where the axis 1 contains in order r, phi, s
+
+        This method computes the following:
+            *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
+            where the axis 1 contains in order r, phi, s
+
+            *jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
+
+            *innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
+
+            *self.last_covariance: covariance of state variables corrected by the measurements
+
+        @result: the method returns self.last_state_mu: the state estimate corrected by the measurements
+        """
+        ### initialize matrices and indices ###
+
+        # number of predictions to be computed
+        number_pred = np.shape(map_features)[0]
+
+        # number of observations made
+        number_obs = np.shape(z_i)[0]
+
+        # z_hat: numpy array of dim (k, 3) containing the predicted measurements
+        z_hat = np.zeros_like(number_pred)
+
+        # jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
+        jacobian_H = np.zeros((number_pred, 3, 3))
+
+        # innovation_S: numpy array of dim (k, 3, 3) containing the innovation matrix of the predicted measurements
+        innovation_S = np.zeros((number_pred, 3, 3))
+
+        ### compute predicted measurements and corresponding jacobian ###
+
+        # compute r of each predicted measurements
+        # norm-2 of the vector from robot's pose to landmark
+        delta_x = (map_features[:, 0] - self.last_state_mu[0])
+        delta_y = (map_features[:, 1] - self.last_state_mu[1])
+        z_hat[:, 0] = norm(np.array([delta_x, delta_y]), axis=0)
+
+        # compute partial derivatives of r
+        # dr/du_x = 0.5 * (1/r) * -2 * (m_x - u_x)
+        # dr/du_y = 0.5 * (1/r) * -2 * (m_y - u_y)
+        jacobian_H[:, 0, 0] = -1 * np.divide(delta_x, z_hat[:, 0])
+        jacobian_H[:, 0, 1] = -1 * np.divide(delta_y, z_hat[:, 0])
+
+        # compute phi
+        z_hat[:, 1] = atan2(delta_y, delta_x) - self.last_state_mu[2]
+
+        # compute partial derivatives of phi as per the chain rule
+        # and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
+        # dphi / du_x = datan2 / ddelta_x * ddelta_x / du_x = -1 * delta_y / (delta_x^2 + delta_y^2) * -1 = delta_y / (delta_x^2 + delta_y^2)
+        # dphi / du_y = datan2 / ddelta_y * ddelta_y / du_y = delta_y / (delta_x^2 + delta_y^2) * -1 = -1 * dphi / du_x
+        # dphi / du_psi = -1
+        jacobian_H[:, 1, 0] = np.divide(delta_y, np.power(delta_x, 2) + np.power(delta_y, 2))
+        jacobian_H[:, 1, 1] = -1 * jacobian_H[:, 1, 0]
+        jacobian_H[:, 1, 2] = -1
+
+        # compute s
+        z_hat[:, 2] = map_features[:, 2]
+
+        ### compute innovation matrices and initialize its inverse ###
+
+        jacobian_H_transposed = np.transpose(jacobian_H, axes=[0, 2, 1])
+        innovation_S = jacobian_H @ self.last_covariance @ jacobian_H_transposed + self.sensor_covariance
+        innovation_S_inv = np.zeros_like(innovation_S)
+
+        ### compute the likelihood score ###
+
+        # pre-compute scaling factor of formula upfront
+        determinant = matrix_det(innovation_S)
+        # if determinant = 0 we set to 1 to avoid division by zero
+        determinant[determinant == 0] = 1
+        scaling_factor = np.power(2 * np.pi * matrix_det(determinant), -0.5)
+
+        # pre-compute inverted innovation matrix upfront
+        # catch error if matrix can't be inverted
+        for prediction in range(np.shape(z_hat)[0]):
+            try:
+                innovation_S_inv[prediction, :, :] = matrix_inv(innovation_S[prediction, :, :])
+            except np.linalg.LinAlgError:
+                innovation_S_inv[prediction, :, :] = np.eye(np.shape(innovation_S_inv)[1])
+
+        ### correction of state estimate and covariance ###
+
+        # for each observed feature
+        # a likelihood score is computed w.r.t. each feature in the map
+        # the kalman gain is computed for this observation
+        # the pose and covariance are updated
+        for observation_idx in range(number_obs):
+            scores = np.zeros_like(number_pred)
+            observation = z_i[observation_idx, :]
+
+            for prediction_idx in range(number_pred):
+                prediction = z_hat[prediction_idx, :]
+                delta_z = observation - prediction
+
+                # a set of likelihood scores is computed for each observation
+                scores[prediction_idx] = scaling_factor[prediction_idx] * \
+                                         np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
+
+            # for each observed feature the index of the most likely among k features is retained
+            most_likely_feature = np.argmax(scores)
+
+            # compute Kalman gain for this observation
+            kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T \
+                          @ innovation_S_inv[most_likely_feature, :, :]
+
+            # correct pose and covariance with respect to this observation
+            self.last_state_mu += kalman_gain * (observation - z_hat[most_likely_feature, :])
+            self.last_covariance = (np.eye(3) - kalman_gain * jacobian_H[most_likely_feature, :, :]) \
+                                   @ self.last_covariance
+
+        return self.last_state_mu
 
 
 class Localization:
@@ -398,85 +398,81 @@ class Localization:
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
 
-        ### fetch and publish map features as Markers in Rviz ###
-        self.map_features = rospy.get_param("/map_features/")
-        print("start x : ", int(self.map_features["start_x"][0]))
+        ### fetch map feature set from ROS parameters server ###
+        self.map_features_raw = rospy.get_param("/map_features/")
 
-        ### publish the map features ###
-        # get map parameters
-        self.width = rospy.get_param("/map/width")
-        self.height = rospy.get_param("/map/height")
-        self.resolution = rospy.get_param("/map/resolution")
+        # get map parameters for transformation of grid into world coordinates
+        self.map_width = rospy.get_param("/map/width")
+        self.map_height = rospy.get_param("/map/height")
+        self.map_resolution = rospy.get_param("/map/resolution")
         self.map_origin = rospy.get_param("/map/origin")
 
-        ### initialize the marker message ###
-        self.map_features_marker_msg = Marker()
+        ### initialize the marker message & display settings ###
+        self.features_marker_msg = Marker()
+        self.features_marker_msg.ns = "line_extraction"
+        self.features_marker_msg.id = 0
+        self.features_marker_msg.type = np.int(5)  # display marker as line list
+        self.features_marker_msg.scale.x = 0.1
+        self.features_marker_msg.header = Header()
+        self.features_marker_msg.header.frame_id = "base_link"
+        self.features_marker_msg.header.stamp = rospy.get_rostime()
 
-        # initialize feature display settings
-        self.map_features_marker_msg.ns = "line_extraction"
-        self.map_features_marker_msg.id = 0
-        self.map_features_marker_msg.type = np.int(5)  # display marker as line list
-        self.map_features_marker_msg.scale.x = 0.1
-        self.map_features_marker_msg.header = Header()
-        self.map_features_marker_msg.header.frame_id = "base_link"
-        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
+        # extract coordinates of each individual feature in the set
+        for point in range(0, len(self.map_features_raw["start_x"])):
 
-        for point in range(0, len(self.map_features["start_x"])):
+            # filter out by trial and error the features extracts from the artefacts of occupancy grid map
 
-            ### filter out by trial and error the features extracts from the artefacts of occupancy grid map ###
-
-            if (int(self.map_features["start_y"][point]) > 270 or int(self.map_features["end_y"][point]) > 270) and \
-                    (int(self.map_features["start_x"][point]) < 230 and int(self.map_features["end_x"][point]) < 230):
+            if (int(self.map_features_raw["start_y"][point]) > 270 or int(self.map_features_raw["end_y"][point]) > 270) and \
+                    (int(self.map_features_raw["start_x"][point]) < 230 and int(self.map_features_raw["end_x"][point]) < 230):
                 continue
 
-            if (int(self.map_features["start_x"][point]) > 238 and int(self.map_features["end_x"][point]) > 238):
+            if (int(self.map_features_raw["start_x"][point]) > 238 and int(self.map_features_raw["end_x"][point]) > 238):
                 continue
 
-            if int(self.map_features["start_y"][point]) < 68 or int(self.map_features["end_y"][point]) < 68:
+            if int(self.map_features_raw["start_y"][point]) < 68 or int(self.map_features_raw["end_y"][point]) < 68:
                 continue
 
-            if (int(self.map_features["start_x"][point]) < 41 or int(self.map_features["end_x"][point]) < 41) and \
-                    int(self.map_features["start_y"][point]) > 270 or int(self.map_features["end_y"][point]) > 270:
+            if (int(self.map_features_raw["start_x"][point]) < 41 or int(self.map_features_raw["end_x"][point]) < 41) and \
+                    int(self.map_features_raw["start_y"][point]) > 270 or int(self.map_features_raw["end_y"][point]) > 270:
                 continue
 
-            if (int(self.map_features["start_x"][point]) < 41 or int(self.map_features["end_x"][point]) < 41) and \
-                    (int(self.map_features["start_y"][point]) < 250 and int(self.map_features["end_y"][point]) < 250):
+            if (int(self.map_features_raw["start_x"][point]) < 41 or int(self.map_features_raw["end_x"][point]) < 41) and \
+                    (int(self.map_features_raw["start_y"][point]) < 250 and int(self.map_features_raw["end_y"][point]) < 250):
                 continue
 
-            if (int(self.map_features["start_x"][point]) < 38 or int(self.map_features["end_x"][point]) < 38) and \
-                    (int(self.map_features["start_y"][point]) > 250 and int(self.map_features["end_y"][point]) < 260):
+            if (int(self.map_features_raw["start_x"][point]) < 38 or int(self.map_features_raw["end_x"][point]) < 38) and \
+                    (int(self.map_features_raw["start_y"][point]) > 250 and int(self.map_features_raw["end_y"][point]) < 260):
                 continue
 
-            ### convert grid to world coordinates with +/- translation to center the features on the environment ###
+            # convert grid to world coordinates with +/- translation to center the features on the environment
+            start_point = grid_to_world(int(self.map_features_raw["start_x"][point]) + 1,
+                                        int(self.map_features_raw["start_y"][point]) - 1,
+                                        self.map_origin[0], self.map_origin[1], self.map_width, self.map_height,
+                                        self.map_resolution)
 
-            start_point = grid_to_world(int(self.map_features["start_x"][point])+1,
-                                        int(self.map_features["start_y"][point])-1,
-                                        self.map_origin[0], self.map_origin[1], self.width, self.height,
-                                        self.resolution)
-
-            end_point = grid_to_world(int(self.map_features["end_x"][point])+1,
-                                      int(self.map_features["end_y"][point])-1,
+            end_point = grid_to_world(int(self.map_features_raw["end_x"][point]) + 1,
+                                      int(self.map_features_raw["end_y"][point]) - 1,
                                       self.map_origin[0], self.map_origin[1],
-                                      self.width, self.height, self.resolution)
+                                      self.map_width, self.map_height, self.map_resolution)
 
             # assign color to each end point of the line segment
             color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
-            self.map_features_marker_msg.colors.append(color)
-            self.map_features_marker_msg.colors.append(color)
+            self.features_marker_msg.colors.append(color)
+            self.features_marker_msg.colors.append(color)
 
             # add start point to list
             p_start = Point()
             p_start.x = start_point[0]
-            p_start.y = -1*start_point[1]+0.66*self.width
+            p_start.y = -1*start_point[1]+0.66*self.map_width
             p_start.z = 0
-            self.map_features_marker_msg.points.append(p_start)
+            self.features_marker_msg.points.append(p_start)
 
             # add end point to list
             p_end = Point()
             p_end.x = end_point[0]
-            p_end.y = -1*end_point[1]+0.66*self.width
+            p_end.y = -1*end_point[1]+0.66*self.map_width
             p_end.z = 0
-            self.map_features_marker_msg.points.append(p_end)
+            self.features_marker_msg.points.append(p_end)
 
 
     def run(self):
@@ -512,8 +508,8 @@ class Localization:
         self.pose_pub.publish(self.predicted_state_msg)
 
         # publish features
-        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
-        self.map_features_pub.publish(self.map_features_marker_msg)
+        self.features_marker_msg.header.stamp = rospy.get_rostime()
+        self.map_features_pub.publish(self.features_marker_msg)
 
 
     def odometryCallback(self, data):

@@ -62,9 +62,9 @@ class OGMap:
         ### static content of Occupancy Grid message
         ### map metadata for msg ###
         self.map_meta_data = MapMetaData()
-        self.map_meta_data.resolution = resolution # size of a cell
-        self.map_meta_data.width = int(width/resolution) # [cells]
-        self.map_meta_data.height = int(height/resolution) # [cells]
+        self.map_meta_data.map_resolution = resolution # size of a cell
+        self.map_meta_data.map_width = int(width / resolution) # [cells]
+        self.map_meta_data.map_height = int(height / resolution) # [cells]
         self.map_meta_data.origin = Pose()
         self.map_meta_data.origin.position = Point()
         self.map_meta_data.origin.position.x, self.map_meta_data.origin.position.y = map_origin
