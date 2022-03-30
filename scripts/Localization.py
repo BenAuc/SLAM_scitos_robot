@@ -436,31 +436,28 @@ class Localization:
             # point = 0
             # print("point nr :", point)
             start_point = grid_to_world(int(self.map_features["start_x"][point]),
-                                        int(self.map_features["start_y"][point]),
+                                        int(self.map_features["start_y"][point])-1,
                                         self.map_origin[0], self.map_origin[1], self.width, self.height,
                                         self.resolution)
 
             # print("new start point : ", start_point)
-            end_point = grid_to_world(int(self.map_features["end_x"][point]), int(self.map_features["end_y"][point]),
+            end_point = grid_to_world(int(self.map_features["end_x"][point]), int(self.map_features["end_y"][point])-1,
                                       self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
-            color = ColorRGBA(1.0, 0.0, 0.0, 1.0)
+            color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
             self.map_features_marker_msg.colors.append(color)
-            # self.map_features_marker_msg.color.g = 0.0
-            # self.map_features_marker_msg.color.b = 0.0
-            # self.map_features_marker_msg.color.a = 1.0
 
             p_start = Point()
             p_start.x = start_point[0]
-            p_start.y = -1*start_point[1]
+            p_start.y = -1*start_point[1]+0.66*self.width
             p_start.z = 0
             self.map_features_marker_msg.points.append(p_start)
-            color = ColorRGBA(1.0, 0.0, 0.0, 1.0)
+            color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
             self.map_features_marker_msg.colors.append(color)
             # print("updated list of points : ", self.map_features_marker_msg.points)
 
             p_end = Point()
             p_end.x = end_point[0]
-            p_end.y = -1*end_point[1]
+            p_end.y = -1*end_point[1]+0.66*self.width
             p_end.z = 0
             self.map_features_marker_msg.points.append(p_end)
         # print("frames :", allFramesAsYAML())
