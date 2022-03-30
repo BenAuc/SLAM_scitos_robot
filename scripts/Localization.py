@@ -20,6 +20,7 @@ from numpy.linalg import inv as matrix_inv
 from numpy import arctan2 as atan2
 import rospy
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
+# from tf import allFramesAsYAML
 from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, Twist
 from visualization_msgs.msg import Marker
 from nav_msgs.msg import Odometry
@@ -402,7 +403,6 @@ class Localization:
         print("start x : ", int(self.map_features["start_x"][0]))
 
         ### publish the map features ###
-
         # get map parameters
         self.width = rospy.get_param("/map/width")
         self.height = rospy.get_param("/map/height")
@@ -414,103 +414,59 @@ class Localization:
         # self.displayMapFeatures()
 
         # initialize display settings
+
         self.map_features_marker_msg.ns = "line_extraction"
         self.map_features_marker_msg.id = 0
-        self.map_features_marker_msg.type = 5  # display marker as line list
+        self.map_features_marker_msg.type = np.int(5)  # display marker as line list
         self.map_features_marker_msg.scale.x = 0.1
-        self.map_features_marker_msg.color = ColorRGBA()
-        self.map_features_marker_msg.color.r = 1.0
-        self.map_features_marker_msg.color.g = 0.0
-        self.map_features_marker_msg.color.b = 0.0
-        self.map_features_marker_msg.color.a = 1.0
-        self.map_features_marker_msg.header = Header()
-        self.map_features_marker_msg.header.frame_id = "world"
-        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
-        # self.map_features_marker_msg.points = Point()
-
-        print("nr of points : ", len(self.map_features["start_x"]))
-
-        for point in range(0, len(self.map_features["start_x"])):
-            # point = 0
-            print("point nr :", point)
-            start_point = grid_to_world(int(self.map_features["start_x"][point]),
-                                        int(self.map_features["start_y"][point]),
-                                        self.map_origin[0], self.map_origin[1], self.width, self.height,
-                                        self.resolution)
-
-            print("new start point : ", start_point)
-            end_point = grid_to_world(int(self.map_features["end_x"][point]), int(self.map_features["end_y"][point]),
-                                      self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
-
-            p_start = Point()
-            p_start.x = start_point[0]
-            p_start.y = start_point[1]
-            p_start.z = 0
-            self.map_features_marker_msg.points.append(p_start)
-            print("updated list of points : ", self.map_features_marker_msg.points)
-
-            p_end = Point()
-            p_end.x = end_point[0]
-            p_end.y = end_point[1]
-            p_end.z = 0
-            self.map_features_marker_msg.points.append(p_end)
-
-        print("last end point : ", self.map_features_marker_msg.points[-1])
-
-        self.map_features_pub.publish(self.map_features_marker_msg)
-        # self.map_features_marker_msg.points = Point()
-        # self.map_features_marker_msg.color = ColorRGBA()
-
-            # .publish(self.map_features_marker_msg)
-        # print(self.map_features)
-        # print(len(self.map_features))
-
-
-    # def displayMapFeatures(self):
-    #     pass
-        # # initialize display settings
-        # self.map_features_marker_msg.ns = "line_extraction"
-        # self.map_features_marker_msg.id = 0
-        # self.map_features_marker_msg.type = 5 # display marker as line list
-        # self.map_features_marker_msg.scale.x = 0.2
         # self.map_features_marker_msg.color = ColorRGBA()
         # self.map_features_marker_msg.color.r = 1.0
         # self.map_features_marker_msg.color.g = 0.0
         # self.map_features_marker_msg.color.b = 0.0
         # self.map_features_marker_msg.color.a = 1.0
-        # self.map_features_marker_msg.header = Header()
-        # self.map_features_marker_msg.header.frame_id = "/world"
-        # self.map_features_marker_msg.header.stamp = rospy.get_rostime()
-        # # self.map_features_marker_msg.points = Point()
-        #
+        self.map_features_marker_msg.header = Header()
+        self.map_features_marker_msg.header.frame_id = "base_link"
+        # self.map_features_marker_msg.header.frame_id = "hokuyo_link"
+        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
+        # self.map_features_marker_msg.points = Point()
+
         # print("nr of points : ", len(self.map_features["start_x"]))
-        #
-        # for point in range(0, len(self.map_features["start_x"])):
-        #     # point = 0
-        #     print("point nr :", point)
-        #     start_point = grid_to_world(int(self.map_features["start_x"][point]), int(self.map_features["start_y"][point]),
-        #                   self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
-        #
-        #     print("new start point : ", start_point)
-        #     end_point = grid_to_world(int(self.map_features["end_x"][point]), int(self.map_features["end_y"][point]),
-        #                                 self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
-        #
-        #     p_start = Point()
-        #     p_start.x = start_point[0]
-        #     p_start.y = start_point[1]
-        #     p_start.z = 0
-        #     self.map_features_marker_msg.points.append(p_start)
-        #     print("updated list of points : ", self.map_features_marker_msg.points)
-        #
-        #     p_end = Point()
-        #     p_end.x = end_point[0]
-        #     p_end.y = end_point[1]
-        #     p_end.z = 0
-        #     self.map_features_marker_msg.points.append(p_end)
-        #
-        # print("last end point : ", self.map_features_marker_msg.points[-1])
-        #
-        # self.map_features_pub.publish(self.map_features_marker_msg)
+
+        for point in range(0, len(self.map_features["start_x"])):
+            # point = 0
+            # print("point nr :", point)
+            start_point = grid_to_world(int(self.map_features["start_x"][point]),
+                                        int(self.map_features["start_y"][point]),
+                                        self.map_origin[0], self.map_origin[1], self.width, self.height,
+                                        self.resolution)
+
+            # print("new start point : ", start_point)
+            end_point = grid_to_world(int(self.map_features["end_x"][point]), int(self.map_features["end_y"][point]),
+                                      self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
+            color = ColorRGBA(1.0, 0.0, 0.0, 1.0)
+            self.map_features_marker_msg.colors.append(color)
+            # self.map_features_marker_msg.color.g = 0.0
+            # self.map_features_marker_msg.color.b = 0.0
+            # self.map_features_marker_msg.color.a = 1.0
+
+            p_start = Point()
+            p_start.x = start_point[0]
+            p_start.y = -1*start_point[1]
+            p_start.z = 0
+            self.map_features_marker_msg.points.append(p_start)
+            color = ColorRGBA(1.0, 0.0, 0.0, 1.0)
+            self.map_features_marker_msg.colors.append(color)
+            # print("updated list of points : ", self.map_features_marker_msg.points)
+
+            p_end = Point()
+            p_end.x = end_point[0]
+            p_end.y = -1*end_point[1]
+            p_end.z = 0
+            self.map_features_marker_msg.points.append(p_end)
+        # print("frames :", allFramesAsYAML())
+        print("last end point : ", self.map_features_marker_msg.points[-1])
+
+        self.map_features_pub.publish(self.map_features_marker_msg)
 
 
     def run(self):
@@ -562,6 +518,7 @@ class Localization:
                                                axes='szyx')[0]
         # extract robot pose
         self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
+        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
         self.map_features_pub.publish(self.map_features_marker_msg)
 
     def groundTruthCallback(self, data):
