@@ -409,61 +409,74 @@ class Localization:
         self.resolution = rospy.get_param("/map/resolution")
         self.map_origin = rospy.get_param("/map/origin")
 
-        # initialize the marker message and publish it
+        ### initialize the marker message ###
         self.map_features_marker_msg = Marker()
-        # self.displayMapFeatures()
 
-        # initialize display settings
-
+        # initialize feature display settings
         self.map_features_marker_msg.ns = "line_extraction"
         self.map_features_marker_msg.id = 0
         self.map_features_marker_msg.type = np.int(5)  # display marker as line list
         self.map_features_marker_msg.scale.x = 0.1
-        # self.map_features_marker_msg.color = ColorRGBA()
-        # self.map_features_marker_msg.color.r = 1.0
-        # self.map_features_marker_msg.color.g = 0.0
-        # self.map_features_marker_msg.color.b = 0.0
-        # self.map_features_marker_msg.color.a = 1.0
         self.map_features_marker_msg.header = Header()
         self.map_features_marker_msg.header.frame_id = "base_link"
-        # self.map_features_marker_msg.header.frame_id = "hokuyo_link"
         self.map_features_marker_msg.header.stamp = rospy.get_rostime()
-        # self.map_features_marker_msg.points = Point()
-
-        # print("nr of points : ", len(self.map_features["start_x"]))
 
         for point in range(0, len(self.map_features["start_x"])):
-            # point = 0
-            # print("point nr :", point)
-            start_point = grid_to_world(int(self.map_features["start_x"][point]),
+
+            ### filter out by trial and error the features extracts from the artefacts of occupancy grid map ###
+
+            if (int(self.map_features["start_y"][point]) > 270 or int(self.map_features["end_y"][point]) > 270) and \
+                    (int(self.map_features["start_x"][point]) < 230 and int(self.map_features["end_x"][point]) < 230):
+                continue
+
+            if (int(self.map_features["start_x"][point]) > 238 and int(self.map_features["end_x"][point]) > 238):
+                continue
+
+            if int(self.map_features["start_y"][point]) < 68 or int(self.map_features["end_y"][point]) < 68:
+                continue
+
+            if (int(self.map_features["start_x"][point]) < 41 or int(self.map_features["end_x"][point]) < 41) and \
+                    int(self.map_features["start_y"][point]) > 270 or int(self.map_features["end_y"][point]) > 270:
+                continue
+
+            if (int(self.map_features["start_x"][point]) < 41 or int(self.map_features["end_x"][point]) < 41) and \
+                    (int(self.map_features["start_y"][point]) < 250 and int(self.map_features["end_y"][point]) < 250):
+                continue
+
+            if (int(self.map_features["start_x"][point]) < 38 or int(self.map_features["end_x"][point]) < 38) and \
+                    (int(self.map_features["start_y"][point]) > 250 and int(self.map_features["end_y"][point]) < 260):
+                continue
+
+            ### convert grid to world coordinates with +/- translation to center the features on the environment ###
+
+            start_point = grid_to_world(int(self.map_features["start_x"][point])+1,
                                         int(self.map_features["start_y"][point])-1,
                                         self.map_origin[0], self.map_origin[1], self.width, self.height,
                                         self.resolution)
 
-            # print("new start point : ", start_point)
-            end_point = grid_to_world(int(self.map_features["end_x"][point]), int(self.map_features["end_y"][point])-1,
-                                      self.map_origin[0], self.map_origin[1], self.width, self.height, self.resolution)
+            end_point = grid_to_world(int(self.map_features["end_x"][point])+1,
+                                      int(self.map_features["end_y"][point])-1,
+                                      self.map_origin[0], self.map_origin[1],
+                                      self.width, self.height, self.resolution)
+
+            # assign color to each end point of the line segment
             color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
             self.map_features_marker_msg.colors.append(color)
+            self.map_features_marker_msg.colors.append(color)
 
+            # add start point to list
             p_start = Point()
             p_start.x = start_point[0]
             p_start.y = -1*start_point[1]+0.66*self.width
             p_start.z = 0
             self.map_features_marker_msg.points.append(p_start)
-            color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
-            self.map_features_marker_msg.colors.append(color)
-            # print("updated list of points : ", self.map_features_marker_msg.points)
 
+            # add end point to list
             p_end = Point()
             p_end.x = end_point[0]
             p_end.y = -1*end_point[1]+0.66*self.width
             p_end.z = 0
             self.map_features_marker_msg.points.append(p_end)
-        # print("frames :", allFramesAsYAML())
-        print("last end point : ", self.map_features_marker_msg.points[-1])
-
-        self.map_features_pub.publish(self.map_features_marker_msg)
 
 
     def run(self):
@@ -483,7 +496,7 @@ class Localization:
         """
         Perform an iteration of the localization loop.
         @param: self
-        @result: performs the predicton and update steps.
+        @result: performs the predicton and update steps. Publish pose estimate and map features.
         """
         pose = self.kalman_filter.predictionStep(self.control_input)
         ### Message editing ###
@@ -497,6 +510,11 @@ class Localization:
 
         ### Publish ###
         self.pose_pub.publish(self.predicted_state_msg)
+
+        # publish features
+        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
+        self.map_features_pub.publish(self.map_features_marker_msg)
+
 
     def odometryCallback(self, data):
         """
@@ -515,8 +533,7 @@ class Localization:
                                                axes='szyx')[0]
         # extract robot pose
         self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
-        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
-        self.map_features_pub.publish(self.map_features_marker_msg)
+
 
     def groundTruthCallback(self, data):
         """
