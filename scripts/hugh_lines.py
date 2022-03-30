@@ -1,6 +1,8 @@
 """
 @file hough_lines.py
-@brief This program demonstrates line finding with the Hough transform
+@brief This program extracts line segments from the occupancy grid map using Hough transform and saves the set of lines
+to a yaml file
+Uncommenting the last section of the code will display the line segments overlaid on the image
 """
 import sys
 import cv2 as cv
@@ -45,11 +47,8 @@ linesFromEdges = cv.HoughLinesP(image=edges, rho=1, theta=np.pi/2, threshold=3, 
 filename2 = "/home/benoit/catkin_ws/src/ias0060_scitos_auclair_bryan_schneider/data/config/map_features.yaml"
 
 if linesFromBaW is not None:
-    # open a file
-    # file = open(filename, "w")
 
     with open(filename2, 'w') as file:
-        # line_dict = {}
         start_x = []
         start_y = []
         end_x = []
@@ -62,12 +61,6 @@ if linesFromBaW is not None:
             end_x.append(str(l[2]))
             end_y.append(str(l[3]))
 
-            # line_dict = {idx:
-            #                  {'start':
-            #                       {'x':str(l[0]), 'y':str(l[1])},
-            #                   'end':
-            #                       {'x':str(l[2]), 'y':str(l[3])}}}
-            # (str(idx) = dict('x' = l[0]))
             cv.line(cdst0, (l[0], l[1]), (l[2], l[3]), (0, 0, 255), 2, cv.LINE_AA)
 
         line_dict = {"start_x": start_x, "start_y": start_y, "end_x": end_x, "end_y": end_y}
@@ -75,24 +68,24 @@ if linesFromBaW is not None:
         documents = yaml.dump(line_dict, file)
 
         
-# if linesFromEdges is not None:
-#     all_lines = dict
-#     for i in range(0, len(linesFromEdges)):
-#         print("coordinates line: ", i)
-#
-#         l = linesFromEdges[i][0]
-#         print("coordinates start point: ", (l[0], l[1]))
-#         print("coordinates end point: ", (l[2], l[3]))
-#         cv.line(cdst1, (l[0], l[1]), (l[2], l[3]), (0, 0, 255), 2, cv.LINE_AA)
-#
-#
-# # cv.imshow("Source", src)
-# # cv.imshow("Detected Lines (in red) - Standard Hough Line Transform", cdst)
-# cv.imshow("Detected Lines - black and white img", cdst0)
-# cv.imshow("Detected Lines - edges", cdst1)
-#
-# # plt.imshow(cdst0)
-# # plt.show()
-#
-# cv.waitKey(0)
-# cv.destroyAllWindows()
+if linesFromEdges is not None:
+    all_lines = dict
+    for i in range(0, len(linesFromEdges)):
+        print("coordinates line: ", i)
+
+        l = linesFromEdges[i][0]
+        print("coordinates start point: ", (l[0], l[1]))
+        print("coordinates end point: ", (l[2], l[3]))
+        cv.line(cdst1, (l[0], l[1]), (l[2], l[3]), (0, 0, 255), 2, cv.LINE_AA)
+
+
+# cv.imshow("Source", src)
+# cv.imshow("Detected Lines (in red) - Standard Hough Line Transform", cdst)
+cv.imshow("Detected Lines - black and white img", cdst0)
+cv.imshow("Detected Lines - edges", cdst1)
+
+# plt.imshow(cdst0)
+# plt.show()
+
+cv.waitKey(0)
+cv.destroyAllWindows()

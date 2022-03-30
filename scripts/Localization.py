@@ -13,6 +13,10 @@ Team members: Benoit Auclair; Michael Bryan
 Date: March 30, 2022
 """
 import numpy
+import yaml
+from copy import deepcopy
+from laser_line_extraction.msg import LineSegmentList
+from laser_line_extraction.msg import LineSegment
 import numpy as np
 from numpy.linalg import norm as norm
 from numpy.linalg import det as matrix_det
@@ -346,9 +350,11 @@ class KalmanFilter:
 
 class Localization:
     """
-    Main node which handles odometry and laserdata, updates
-    the Kalman Filter class
+    Main node which handles incoming odometry data, control inputs from teleop, and features extracted by the package
+    laser_line_extraction. Calls the Kalman Filter class to make a prediction of the system state and a correction on the
+    basis of the measurement performed
     @input: odometry as nav_msgs Odometry message
+    @input: line segments as custom LineSegmentList message, see package at https://github.com/kam3k/laser_line_extraction
     @output: pose as geometry_msgs PoseStamped message
     """
 
@@ -370,6 +376,7 @@ class Localization:
         self.ground_truth_sub = rospy.Subscriber("/ground_truth", Odometry, self.groundTruthCallback)
         self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odometryCallback)
         self.control_input_sub = rospy.Subscriber("/cmd_vel", Twist, self.controlInputCallback)
+        self.line_segment_sub = rospy.Subscriber("/line_segments", LineSegmentList, self.lineListCallback)
 
         ### publishers ###
         self.pose_pub = rospy.Publisher("/robot_pose", PoseStamped,
@@ -378,6 +385,10 @@ class Localization:
         self.map_features_pub = rospy.Publisher("/map_features", Marker,
                                         queue_size=1)  # queue_size=1 => only the newest map available
 
+        ### initialize message to collect the list of extracted features ###
+        self.line_list_msg = LineSegmentList()
+        self.extracted_lines = None
+
         ### initialize KF class ###
         # could be initialized in first run of ground_truth callback
         # now it should be  -x 0 -y 0 -z 0, see line 31 in scitos.launch
@@ -385,7 +396,8 @@ class Localization:
         self.kalman_filter = KalmanFilter(self.dt, initial_pose)
 
         ### initialization of class variables ###
-        self.robot_pose = None
+        self.robot_pose_odom = None
+        self.robot_pose_estimate = None
         self.odom_msg = None  # input
         self.ground_truth_msg = None  # input
         self.control_input = np.zeros((2, 1))  # [v, w]'
@@ -400,6 +412,7 @@ class Localization:
 
         ### fetch map feature set from ROS parameters server ###
         self.map_features_raw = rospy.get_param("/map_features/")
+        self.map_features_clean = {"start": [], "mid": [], "end": [], "length": [], "position1": [], "position2": []}
 
         # get map parameters for transformation of grid into world coordinates
         self.map_width = rospy.get_param("/map/width")
@@ -414,13 +427,13 @@ class Localization:
         self.features_marker_msg.type = np.int(5)  # display marker as line list
         self.features_marker_msg.scale.x = 0.1
         self.features_marker_msg.header = Header()
-        self.features_marker_msg.header.frame_id = "base_link"
+        self.features_marker_msg.header.frame_id = "odom"
         self.features_marker_msg.header.stamp = rospy.get_rostime()
 
         # extract coordinates of each individual feature in the set
         for point in range(0, len(self.map_features_raw["start_x"])):
 
-            # filter out by trial and error the features extracts from the artefacts of occupancy grid map
+            # filter out by trial and error the features that came out of the artefacts of the occupancy grid map
 
             if (int(self.map_features_raw["start_y"][point]) > 270 or int(self.map_features_raw["end_y"][point]) > 270) and \
                     (int(self.map_features_raw["start_x"][point]) < 230 and int(self.map_features_raw["end_x"][point]) < 230):
@@ -474,6 +487,17 @@ class Localization:
             p_end.z = 0
             self.features_marker_msg.points.append(p_end)
 
+            self.map_features_clean["start"].append(np.asarray(start_point))
+            self.map_features_clean["end"].append(np.asarray(end_point))
+            self.map_features_clean["mid"].append(np.array([round(start_point[0] + (end_point[0] - start_point[0]) / 2),
+                                                            round(start_point[1] + (end_point[1] - start_point[1]) / 2)]).
+                                                  reshape(1, 2))
+
+            self.map_features_clean["length"].append(round(norm(np.array([end_point[0] - start_point[0],
+                                                                          end_point[1] - start_point[1]])), 2))
+
+        print(self.map_features_clean)
+
 
     def run(self):
         """
@@ -482,9 +506,16 @@ class Localization:
         @result: runs the step function for the predicton and update steps.
         """
         while not rospy.is_shutdown():
-            ### step only when odometry are available ###
+
+            ### step only when odometry is available ###
             if self.odom_msg:
                 self.step()
+
+            # publish features
+            self.features_marker_msg.header.stamp = rospy.get_rostime()
+            self.map_features_pub.publish(self.features_marker_msg)
+
+            # sleep to selected frequency
             self.rate.sleep()
 
 
@@ -494,11 +525,14 @@ class Localization:
         @param: self
         @result: performs the predicton and update steps. Publish pose estimate and map features.
         """
-        pose = self.kalman_filter.predictionStep(self.control_input)
+        self.robot_pose_estimate = self.kalman_filter.predictionStep(self.control_input)
+        # self.lineExtraction()
+        # self.robot_pose_estimate = self.kalman_filter.correctionStep(TBD)
+
         ### Message editing ###
-        self.predicted_state_msg.pose.position.x = pose[0, 0]
-        self.predicted_state_msg.pose.position.y = pose[1, 0]
-        q = quaternion_from_euler(pose[2, 0], 0, 0, 'rzyx')
+        self.predicted_state_msg.pose.position.x = self.robot_pose_estimate[0, 0]
+        self.predicted_state_msg.pose.position.y = self.robot_pose_estimate[1, 0]
+        q = quaternion_from_euler(self.robot_pose_estimate[2, 0], 0, 0, 'rzyx')
         self.predicted_state_msg.pose.orientation.x = q[0]
         self.predicted_state_msg.pose.orientation.y = q[1]
         self.predicted_state_msg.pose.orientation.z = q[2]
@@ -507,9 +541,44 @@ class Localization:
         ### Publish ###
         self.pose_pub.publish(self.predicted_state_msg)
 
-        # publish features
-        self.features_marker_msg.header.stamp = rospy.get_rostime()
-        self.map_features_pub.publish(self.features_marker_msg)
+
+    def lineExtraction(self):
+
+        nr_lines = len(self.line_list_msg.line_segments)
+        # print("line nr: ", nr_lines)
+        self.extracted_lines = np.zeros((nr_lines, 3))
+
+        # extract each line contained in the message
+        for line in range(0, nr_lines):
+            print("line extraction started")
+
+            # extract coordinates
+            start = np.asarray(self.line_list_msg.line_segments[line].start)
+            end = np.asarray(self.line_list_msg.line_segments[line].end)
+            mid = np.array([round(start[0] + (end[0] - start[0]) / 2), round(start[1] + (end[1] - start[1]) / 2)])
+
+            # assign mid point as target
+            self.extracted_lines[line, 0] = mid[0]
+            self.extracted_lines[line, 1] = mid[1]
+            self.extracted_lines[line, 2] = norm(np.array([end[0]-start[0], end[1] - start[1]]))
+
+            print("extracted line: ", self.extracted_lines[line, :])
+
+
+    def lineListCallback(self, data):
+        """
+        Handles incoming LineSegmentList messages and saves the measurements
+        @param: list of line segments stored in the LineSegmentList message
+        @result: TBD
+        """
+        # save line list if any line was measured
+        nr_lines = len(self.line_list_msg.line_segments)
+        print("line nr: ", nr_lines)
+
+        if len(self.line_list_msg.line_segments) > 0:
+            nr_lines = len(self.line_list_msg.line_segments)
+            print("line nr: ", nr_lines)
+            self.line_list_msg = data
 
 
     def odometryCallback(self, data):
@@ -528,8 +597,7 @@ class Localization:
                                                 data.pose.pose.orientation.w],
                                                axes='szyx')[0]
         # extract robot pose
-        self.robot_pose = [data.pose.pose.position.x, data.pose.pose.position.y]
-
+        self.robot_pose_odom = [data.pose.pose.position.x, data.pose.pose.position.y]
 
     def groundTruthCallback(self, data):
         """
@@ -541,7 +609,7 @@ class Localization:
 
     def controlInputCallback(self, data):
         """
-        gets twist message from teleop_key.py
+        Gets twist message from teleop_key.py and call prediction step of kalman filter
         @param: data of type Twist message
         @result: control input ndarray 2 x 1
         """
