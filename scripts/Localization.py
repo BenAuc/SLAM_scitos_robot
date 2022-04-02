@@ -119,9 +119,9 @@ class MotionModel:
         a = control_input - self.last_control_input
 
         # calculate the step magnitude
-        increment = np.array([(v + a[0, 0] * self.dt) * self.dt * np.cos(last_pose[2] + w * self.dt / 2),
-                              (v + a[0, 0] * self.dt) * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
-                              w * self.dt + a[1, 0] * np.power(self.dt, 2)], float).reshape(3, 1)
+        increment = np.array([(v + 0.5 * a[0, 0] * self.dt) * self.dt * np.cos(last_pose[2] + w * self.dt / 2),
+                              (v + 0.5 * a[0, 0] * self.dt) * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
+                              w * self.dt + 0.5 * a[1, 0] * np.power(self.dt, 2)], float).reshape(3, 1)
 
         # add step size to previous pose
         next_pose = last_pose + increment.reshape(3, 1)
@@ -405,7 +405,7 @@ class Localization:
         ### predicted pose message ###
         self.predicted_state_msg = PoseStamped()
         self.predicted_state_msg.header = Header()
-        self.predicted_state_msg.header.frame_id = "odom"
+        self.predicted_state_msg.header.frame_id = "map"
         self.predicted_state_msg.pose = Pose()
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
