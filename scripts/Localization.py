@@ -23,10 +23,11 @@ from numpy.linalg import det as matrix_det
 from numpy.linalg import inv as matrix_inv
 from numpy import arctan2 as atan2
 import rospy
+from rospy import Duration
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 # from tf import allFramesAsYAML
 from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, Twist
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Header, ColorRGBA
 from coordinate_transformations import grid_to_world
@@ -99,7 +100,6 @@ class MotionModel:
 
         # keep track of control input history to calculate acceleration
         self.last_control_input = np.zeros((2, 1))
-
 
     def predictPose(self, control_input, last_pose):
         """
@@ -199,7 +199,7 @@ class KalmanFilter:
         # sensor noise model
         self.sensor_covariance = np.diag(rospy.get_param("/sensor_noise_model/variances"))
         # self.sensor_covariance = np.diag([1, 1, 1])
-        print("sensor covariance matrix : ", self.sensor_covariance)
+        # print("sensor covariance matrix : ", self.sensor_covariance)
 
     def predictionStep(self, control_input):
         """
@@ -372,24 +372,7 @@ class Localization:
         self.dt = 1 / self.frequency  # [s]
         self.rate = rospy.Rate(self.frequency)  # timing object
 
-        ### subscribers ###
-        self.ground_truth_sub = rospy.Subscriber("/ground_truth", Odometry, self.groundTruthCallback)
-        self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odometryCallback)
-        self.control_input_sub = rospy.Subscriber("/cmd_vel", Twist, self.controlInputCallback)
-        self.line_segment_sub = rospy.Subscriber("/line_segments", LineSegmentList, self.lineListCallback)
-
-        ### publishers ###
-        self.pose_pub = rospy.Publisher("/robot_pose", PoseStamped,
-                                        queue_size=1)  # queue_size=1 => only the newest map available
-
-        self.map_features_pub = rospy.Publisher("/map_features", Marker,
-                                        queue_size=1)  # queue_size=1 => only the newest map available
-
-        ### initialize message to collect the list of extracted features ###
-        self.line_list_msg = LineSegmentList()
-        self.extracted_lines = None
-
-        ### initialize KF class ###
+        ### initialize KF class object ###
         # could be initialized in first run of ground_truth callback
         # now it should be  -x 0 -y 0 -z 0, see line 31 in scitos.launch
         initial_pose = np.zeros((3, 1))
@@ -402,7 +385,27 @@ class Localization:
         self.ground_truth_msg = None  # input
         self.control_input = np.zeros((2, 1))  # [v, w]'
 
-        ### predicted pose message ###
+        ### subscribers ###
+        self.ground_truth_sub = rospy.Subscriber("/ground_truth", Odometry, self.groundTruthCallback)
+        self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odometryCallback)
+        self.control_input_sub = rospy.Subscriber("/cmd_vel", Twist, self.controlInputCallback)
+        self.line_segment_sub = rospy.Subscriber("/line_segments", LineSegmentList, self.lineListCallback)
+
+        ### publishers ###
+        self.pose_pub = rospy.Publisher("/robot_pose", PoseStamped,
+                                        queue_size=1)  # queue_size=1 => only the newest map available
+
+        self.map_features_pub = rospy.Publisher("/map_features", Marker,
+                                                queue_size=1)  # queue_size=1 => only the newest map available
+
+        self.map_features_visible_pub = rospy.Publisher("/visualization_marker_array", MarkerArray,
+                                                queue_size=1)  # queue_size=1 => only the newest map available
+
+        ### initialize variables to collect the list of extracted features ###
+        self.laser_line_list = None
+        self.laser_features = None
+
+        ### initialize the predicted pose message ###
         self.predicted_state_msg = PoseStamped()
         self.predicted_state_msg.header = Header()
         self.predicted_state_msg.header.frame_id = "map"
@@ -410,9 +413,30 @@ class Localization:
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
 
+        ### initialize the marker array message & display settings ###
+        self.map_features_seen_marker_msg = MarkerArray()
+        self.pub = True
+
+        ### initialize the marker message & display settings ###
+        self.map_features_marker_msg = Marker()
+        self.map_features_marker_msg.ns = "incoming_lines"
+        self.map_features_marker_msg.id = 0
+        self.map_features_marker_msg.type = np.int(5)  # display marker as line list
+        self.map_features_marker_msg.scale.x = 0.1
+        self.map_features_marker_msg.header = Header()
+        self.map_features_marker_msg.header.frame_id = "map"
+        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
+
         ### fetch map feature set from ROS parameters server ###
         self.map_features_raw = rospy.get_param("/map_features/")
-        self.map_features_clean = {"start": [], "mid": [], "end": [], "length": [], "position1": [], "position2": []}
+        self.map_features_start_x = []
+        self.map_features_start_y = []
+        self.map_features_end_x = []
+        self.map_features_end_y = []
+        self.map_features_mid_x = []
+        self.map_features_mid_y = []
+        self.map_features_length = []
+        self.map_features_sorted_out = None
 
         # get map parameters for transformation of grid into world coordinates
         self.map_width = rospy.get_param("/map/width")
@@ -420,41 +444,40 @@ class Localization:
         self.map_resolution = rospy.get_param("/map/resolution")
         self.map_origin = rospy.get_param("/map/origin")
 
-        ### initialize the marker message & display settings ###
-        self.features_marker_msg = Marker()
-        self.features_marker_msg.ns = "line_extraction"
-        self.features_marker_msg.id = 0
-        self.features_marker_msg.type = np.int(5)  # display marker as line list
-        self.features_marker_msg.scale.x = 0.1
-        self.features_marker_msg.header = Header()
-        self.features_marker_msg.header.frame_id = "odom"
-        self.features_marker_msg.header.stamp = rospy.get_rostime()
-
-        # extract coordinates of each individual feature in the set
+        # extract coordinates of each individual feature in the set of map features fetched from server
+        index = -1
         for point in range(0, len(self.map_features_raw["start_x"])):
 
             # filter out by trial and error the features that came out of the artefacts of the occupancy grid map
-
-            if (int(self.map_features_raw["start_y"][point]) > 270 or int(self.map_features_raw["end_y"][point]) > 270) and \
-                    (int(self.map_features_raw["start_x"][point]) < 230 and int(self.map_features_raw["end_x"][point]) < 230):
+            if (int(self.map_features_raw["start_y"][point]) > 270 or int(
+                    self.map_features_raw["end_y"][point]) > 270) and \
+                    (int(self.map_features_raw["start_x"][point]) < 230 and int(
+                        self.map_features_raw["end_x"][point]) < 230):
                 continue
 
-            if (int(self.map_features_raw["start_x"][point]) > 238 and int(self.map_features_raw["end_x"][point]) > 238):
+            if (int(self.map_features_raw["start_x"][point]) > 238 and int(
+                    self.map_features_raw["end_x"][point]) > 238):
                 continue
 
             if int(self.map_features_raw["start_y"][point]) < 68 or int(self.map_features_raw["end_y"][point]) < 68:
                 continue
 
-            if (int(self.map_features_raw["start_x"][point]) < 41 or int(self.map_features_raw["end_x"][point]) < 41) and \
-                    int(self.map_features_raw["start_y"][point]) > 270 or int(self.map_features_raw["end_y"][point]) > 270:
+            if (int(self.map_features_raw["start_x"][point]) < 41 or int(
+                    self.map_features_raw["end_x"][point]) < 41) and \
+                    int(self.map_features_raw["start_y"][point]) > 270 or int(
+                self.map_features_raw["end_y"][point]) > 270:
                 continue
 
-            if (int(self.map_features_raw["start_x"][point]) < 41 or int(self.map_features_raw["end_x"][point]) < 41) and \
-                    (int(self.map_features_raw["start_y"][point]) < 250 and int(self.map_features_raw["end_y"][point]) < 250):
+            if (int(self.map_features_raw["start_x"][point]) < 41 or int(
+                    self.map_features_raw["end_x"][point]) < 41) and \
+                    (int(self.map_features_raw["start_y"][point]) < 250 and int(
+                        self.map_features_raw["end_y"][point]) < 250):
                 continue
 
-            if (int(self.map_features_raw["start_x"][point]) < 38 or int(self.map_features_raw["end_x"][point]) < 38) and \
-                    (int(self.map_features_raw["start_y"][point]) > 250 and int(self.map_features_raw["end_y"][point]) < 260):
+            if (int(self.map_features_raw["start_x"][point]) < 38 or int(
+                    self.map_features_raw["end_x"][point]) < 38) and \
+                    (int(self.map_features_raw["start_y"][point]) > 250 and int(
+                        self.map_features_raw["end_y"][point]) < 260):
                 continue
 
             # convert grid to world coordinates with +/- translation to center the features on the environment
@@ -470,33 +493,49 @@ class Localization:
 
             # assign color to each end point of the line segment
             color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
-            self.features_marker_msg.colors.append(color)
-            self.features_marker_msg.colors.append(color)
+            self.map_features_marker_msg.colors.append(color)
+            self.map_features_marker_msg.colors.append(color)
 
             # add start point to list
             p_start = Point()
             p_start.x = start_point[0]
-            p_start.y = -1*start_point[1]+0.66*self.map_width
+            p_start.y = -1 * start_point[1] + 0.66 * self.map_width
             p_start.z = 0
-            self.features_marker_msg.points.append(p_start)
+            self.map_features_marker_msg.points.append(p_start)
 
             # add end point to list
             p_end = Point()
             p_end.x = end_point[0]
-            p_end.y = -1*end_point[1]+0.66*self.map_width
+            p_end.y = -1 * end_point[1] + 0.66 * self.map_width
             p_end.z = 0
-            self.features_marker_msg.points.append(p_end)
+            self.map_features_marker_msg.points.append(p_end)
 
-            self.map_features_clean["start"].append(np.asarray(start_point))
-            self.map_features_clean["end"].append(np.asarray(end_point))
-            self.map_features_clean["mid"].append(np.array([round(start_point[0] + (end_point[0] - start_point[0]) / 2),
-                                                            round(start_point[1] + (end_point[1] - start_point[1]) / 2)]).
-                                                  reshape(1, 2))
+            # self.map_features_start.append(np.asarray(start_point))
+            index += 1
+            self.map_features_start_x.append(start_point[0])
+            self.map_features_start_y.append(-1 * start_point[1] + 0.66 * self.map_width)
 
-            self.map_features_clean["length"].append(round(norm(np.array([end_point[0] - start_point[0],
-                                                                          end_point[1] - start_point[1]])), 2))
+            self.map_features_end_x.append(end_point[0])
+            self.map_features_end_y.append(-1 * end_point[1] + 0.66 * self.map_width)
 
-        print(self.map_features_clean)
+            self.map_features_length.append(round(norm(np.array([end_point[0] - start_point[0],
+                                                                 end_point[1] - start_point[1]])), 2))
+
+            # print("# features length :", len(self.map_features_length))
+            # print("# features start :", len(self.map_features_start_x))
+
+
+            # self.map_features_start[index, 1] = start_point[1]
+            # print("start :", self.map_features_start)
+
+
+            # self.map_features_end.append(np.asarray(end_point))
+            # self.map_features_mid.append(np.asarray(round(norm(np.array([end_point[0] - start_point[0],
+            #                                                               end_point[1] - start_point[1]])), 2)))
+
+            # print("start : ", self.map_features_mid[index, :])
+
+            # print("start x:", np.asarray(start_point)[0])
 
 
     def run(self):
@@ -511,13 +550,8 @@ class Localization:
             if self.odom_msg:
                 self.step()
 
-            # publish features
-            self.features_marker_msg.header.stamp = rospy.get_rostime()
-            self.map_features_pub.publish(self.features_marker_msg)
-
             # sleep to selected frequency
             self.rate.sleep()
-
 
     def step(self):
         """
@@ -525,8 +559,10 @@ class Localization:
         @param: self
         @result: performs the predicton and update steps. Publish pose estimate and map features.
         """
-        self.robot_pose_estimate = self.kalman_filter.predictionStep(self.control_input)
-        # self.lineExtraction()
+
+        self.laserFeatureExtraction()
+        self.robot_pose_estimate = self.kalman_filter.predictionStep(self.control_input.copy())
+        self.mapFeatureExtraction()
         # self.robot_pose_estimate = self.kalman_filter.correctionStep(TBD)
 
         ### Message editing ###
@@ -540,29 +576,328 @@ class Localization:
 
         ### Publish ###
         self.pose_pub.publish(self.predicted_state_msg)
+        # publish features
+        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
+        self.map_features_pub.publish(self.map_features_marker_msg)
+
+        self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
+        # if self.pub:
+        #     self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
+        #     self.pub = False
+
+    def mapFeatureExtraction(self):
+
+        pose_yaw = self.robot_pose_estimate[2, 0].copy()
+        pose_x = self.robot_pose_estimate[0, 0].copy()
+        pose_y = self.robot_pose_estimate[1, 0].copy()
+
+        # print("pose_yaw : ", pose_yaw)
+
+        # idx_wall = []
+        #
+        # delta_start_x = self.map_features_start_x - pose_x
+        # idx_wall.append(np.argmin(delta_start_x))
+        #
+        # # print("index of walls start x: ", idx_wall)
+        # # idx_wall.append(np.argmin(delta_start_x - np.min(delta_start_x)))
+        #
+        # delta_start_y = self.map_features_start_y - pose_y
+        # idx_wall.append(np.argmin(delta_start_y))
+        #
+        # # print("index of walls: ", idx_wall)
+        # # idx_wall.append(np.argmin(delta_start_y - np.min(delta_start_y)))
+        #
+        # theta_start = atan2(delta_start_y, delta_start_x) - pose_yaw
+        #
+        # delta_end_x = self.map_features_end_x - pose_x
+        # idx_wall.append(np.argmin(delta_end_x))
+        #
+        #
+        # # print("index of walls end x: ", idx_wall)
+        #
+        # delta_end_y = self.map_features_end_y - pose_y
+        # idx_wall.append(np.argmin(delta_end_y))
+        #
+        # theta_end = atan2(delta_end_y, delta_end_x) - pose_yaw
+        #
+        # theta_max = []
+        # theta_min = []
+        #
+        # # print("index of walls: ", idx_wall)
+        #
+        # for point in range(len(idx_wall)):
+        #     print("idx: ", idx_wall[point])
+        #     if theta_start[idx_wall[point]] > theta_end[idx_wall[point]]:
+        #         theta_max.append(theta_start[idx_wall[point]])
+        #         print("theta max: ", theta_start[idx_wall[point]])
+        #         theta_min.append(theta_end[idx_wall[point]])
+        #         print("theta min: ", theta_end[idx_wall[point]])
+        #     else:
+        #         theta_min.append(theta_start[idx_wall[point]])
+        #         theta_max.append(theta_end[idx_wall[point]])
+        #
+        #         print("theta min: ", theta_start[idx_wall[point]])
+        #         print("theta max: ", theta_end[idx_wall[point]])
+        #
+        # idx = 0
+        # self.map_features_seen_marker_msg.markers = []
+        # time_stamp = rospy.get_rostime()
+        # points_seen_x = []
+        # points_seen_y = []
+        #
+        # for point in range(len(theta_start)):
+        #     if theta_start[point] < np.pi / 2:
+        #         if theta_start[point] > -np.pi / 2:
+        #
+        #             add_point = True
+        #             idx += 1
+        #             if point not in idx_wall:
+        #                 for angle in range(len(theta_max)):
+        #                     if theta_start[point] < theta_max[angle]:
+        #                         if theta_start[point] > theta_min[angle]:
+        #                             add_point = False
+        #
+        #             if add_point:
+        #                 points_seen_x.append(self.map_features_start_x[point])
+        #                 points_seen_y.append(self.map_features_start_y[point])
+        #
+        #     if theta_end[point] < np.pi / 2:
+        #         if theta_end[point] > -np.pi / 2:
+        #
+        #             idx += 1
+        #             add_point = True
+        #             if point not in idx_wall:
+        #                 for angle in range(len(theta_max)):
+        #                     if theta_end[point] < theta_max[angle]:
+        #                         if theta_end[point] > theta_min[angle]:
+        #                             add_point = False
+        #
+        #             if add_point:
+        #                 points_seen_x.append(self.map_features_end_x[point])
+        #                 points_seen_y.append(self.map_features_end_y[point])
+        #
+        # print("points in front # :", idx)
+        #
+        # print("points seen # :", len(points_seen_x))
+        #
+        # for point in range(len(points_seen_x)):
+        #     marker = Marker()
+        #     marker.header.frame_id = "map"
+        #     marker.header.stamp = time_stamp
+        #     marker.ns = "map_lines_seen"
+        #     marker.id = point
+        #     marker.type = np.int(1)  # display marker as cube
+        #     marker.action = np.int(0)
+        #     marker.lifetime = rospy.Duration.from_sec(self.dt * 1.01)
+        #
+        #     # print("x: ", self.map_features_start_x[point])
+        #     # print("y: ", self.map_features_start_y[point])
+        #
+        #     marker.pose.position.x = points_seen_x[point]
+        #     marker.pose.position.y = points_seen_y[point]
+        #     marker.pose.position.z = 0.2
+        #
+        #     marker.pose.orientation.x = 0.0
+        #     marker.pose.orientation.y = 0.0
+        #     marker.pose.orientation.z = 0.0
+        #     marker.pose.orientation.w = 1.0
+        #
+        #     marker.scale.x = 0.2
+        #     marker.scale.y = 0.2
+        #     marker.scale.z = 0.2
+        #
+        #     marker.color.a = 1.0
+        #     marker.color.r = 0.0
+        #     marker.color.g = 0.0
+        #     marker.color.b = 1.0
+        #     idx += 1
+        #     self.map_features_seen_marker_msg.markers.append(marker)
 
 
-    def lineExtraction(self):
+        ########
 
-        nr_lines = len(self.line_list_msg.line_segments)
-        # print("line nr: ", nr_lines)
-        self.extracted_lines = np.zeros((nr_lines, 3))
+        delta_start_x = self.map_features_start_x - pose_x
+        delta_start_y = self.map_features_start_y - pose_y
+        theta_start = atan2(delta_start_y, delta_start_x) - pose_yaw
+        theta_start[theta_start > 2 * np.pi] = 0
+        theta_start[theta_start < -2 * np.pi] = 0
 
-        # extract each line contained in the message
-        for line in range(0, nr_lines):
-            print("line extraction started")
+        delta_end_x = self.map_features_end_x - pose_x
+        delta_end_y = self.map_features_end_y - pose_y
+        theta_end = atan2(delta_end_y, delta_end_x) - pose_yaw
+        theta_end[theta_end > 2 * np.pi] = 0
+        theta_end[theta_end < -2 * np.pi] = 0
 
-            # extract coordinates
-            start = np.asarray(self.line_list_msg.line_segments[line].start)
-            end = np.asarray(self.line_list_msg.line_segments[line].end)
-            mid = np.array([round(start[0] + (end[0] - start[0]) / 2), round(start[1] + (end[1] - start[1]) / 2)])
+        # append points to Marker message
+        idx = 0
+        self.map_features_seen_marker_msg.markers = []
+        time_stamp = rospy.get_rostime()
+        points_seen_x = []
+        points_seen_y = []
 
-            # assign mid point as target
-            self.extracted_lines[line, 0] = mid[0]
-            self.extracted_lines[line, 1] = mid[1]
-            self.extracted_lines[line, 2] = norm(np.array([end[0]-start[0], end[1] - start[1]]))
+        range_max = 11
 
-            print("extracted line: ", self.extracted_lines[line, :])
+        for point in range(len(theta_start)):
+            if theta_start[point] < np.pi / 2:
+                if theta_start[point] > -np.pi / 2:
+
+                    if norm(np.array([delta_start_x[point], delta_start_y[point]])) < range_max:
+                        # print("norm : ", norm(np.array(delta_start_x[point], delta_start_y[point])))
+                        # print("delta : ", np.array([delta_start_x[point], delta_start_y[point]]))
+                        points_seen_x.append(self.map_features_start_x[point])
+                        points_seen_y.append(self.map_features_start_y[point])
+
+            if theta_end[point] < np.pi / 2:
+                if theta_end[point] > -np.pi / 2:
+
+                    if norm(np.array([delta_end_x[point], delta_end_y[point]])) < range_max:
+                        # print("norm :", norm(np.array(delta_end_x[point], delta_end_y[point])))
+                        # print("delta :", np.array(delta_end_x[point], delta_end_y[point]))
+                        points_seen_x.append(self.map_features_end_x[point])
+                        points_seen_y.append(self.map_features_end_y[point])
+
+
+        # for point in range(len(theta_end)):
+        #     if theta_end[point] < np.pi / 2:
+        #         if theta_end[point] > -np.pi / 2:
+        #             print("norm :", norm(np.array(delta_end_x[point], delta_end_y[point])))
+        #             if norm(np.array(delta_end_x[point], delta_end_y[point])) < range_max:
+        #                 points_seen_x.append(self.map_features_end_x[point])
+        #                 points_seen_y.append(self.map_features_end_y[point])
+
+
+        # create marker array for visualization of the seleted features
+        for point in range(len(points_seen_x)):
+            marker = Marker()
+            marker.header.frame_id = "map"
+            marker.header.stamp = time_stamp
+            marker.ns = "map_lines_seen"
+            marker.id = point
+            marker.type = np.int(1)  # display marker as cube
+            marker.action = np.int(0)
+            marker.lifetime = rospy.Duration.from_sec(self.dt * 1.11)
+
+            # print("x: ", self.map_features_start_x[point])
+            # print("y: ", self.map_features_start_y[point])
+
+            marker.pose.position.x = points_seen_x[point]
+            marker.pose.position.y = points_seen_y[point]
+            marker.pose.position.z = 0.2
+
+            marker.pose.orientation.x = 0.0
+            marker.pose.orientation.y = 0.0
+            marker.pose.orientation.z = 0.0
+            marker.pose.orientation.w = 1.0
+
+            marker.scale.x = 0.2
+            marker.scale.y = 0.2
+            marker.scale.z = 0.2
+
+            marker.color.a = 1.0
+            marker.color.r = 0.0
+            marker.color.g = 0.0
+            marker.color.b = 1.0
+            idx += 1
+            self.map_features_seen_marker_msg.markers.append(marker)
+
+
+    #######
+
+
+        # print("displaying markers :", len(self.map_features_seen_marker_msg.markers))
+
+        #
+        # for point in range(len(theta_start)):
+        #     if theta_start[point] < np.pi / 2:
+        #         if theta_start[point] > -np.pi / 2:
+        #
+        #
+        #
+        #             marker = Marker()
+        #             marker.header.frame_id = "map"
+        #             marker.header.stamp = time_stamp
+        #             marker.ns = "map_lines_seen"
+        #             marker.id = point
+        #             marker.type = np.int(1)  # display marker as cube
+        #             marker.action = np.int(0)
+        #             marker.lifetime = rospy.Duration.from_sec(self.dt*1.01)
+        #
+        #             print("x: ", self.map_features_start_x[point])
+        #             print("y: ", self.map_features_start_y[point])
+        #
+        #             marker.pose.position.x = self.map_features_start_x[point]
+        #             marker.pose.position.y = self.map_features_start_y[point]
+        #             marker.pose.position.z = 0.2
+        #
+        #             marker.pose.orientation.x = 0.0
+        #             marker.pose.orientation.y = 0.0
+        #             marker.pose.orientation.z = 0.0
+        #             marker.pose.orientation.w = 1.0
+        #
+        #             marker.scale.x = 0.2
+        #             marker.scale.y = 0.2
+        #             marker.scale.z = 0.2
+        #
+        #             marker.color.a = 1.0
+        #             marker.color.r = 0.0
+        #             marker.color.g = 0.0
+        #             marker.color.b = 1.0
+        #             idx += 1
+        #             self.map_features_seen_marker_msg.markers.append(marker)
+        #
+        # print("displaying markers :", len(self.map_features_seen_marker_msg.markers))
+
+
+
+    def laserFeatureExtraction(self):
+
+        # extract lines from the list if any was received
+        if self.laser_line_list is not None:
+            lines = self.laser_line_list.copy()
+            nr_lines = len(lines)
+            # print("# of lines: ", nr_lines)
+            # self.extracted_lines = np.zeros((nr_lines, 3))
+            # self.extracted_lines = {"start": [], "mid": [], "end": [], "length": []}
+
+            # extract each line contained in the message
+            self.laser_features = np.zeros([nr_lines * 2, 3])
+
+            for line_idx in range(0, nr_lines):
+                # print("line being extracted")
+                # print("type of coordinate: ", type(lines[line_idx].start))
+
+                # extract coordinates
+                start = np.asarray(lines[line_idx].start)
+                end = np.asarray(lines[line_idx].end)
+                line_length = norm(np.array([end[0] - start[0], end[1] - start[1]]))
+                # print("length :", line_length)
+
+                self.laser_features[2 * line_idx, 0] = start[0]
+                self.laser_features[2 * line_idx, 1] = start[1]
+                self.laser_features[2 * line_idx, 2] = line_length
+
+                self.laser_features[2 * line_idx + 1, 0] = end[0]
+                self.laser_features[2 * line_idx + 1, 1] = end[1]
+                self.laser_features[2 * line_idx + 1, 2] = line_length
+
+                # self.extracted_lines["start"].append(np.asarray(start))
+                # self.extracted_lines["end"].append(np.asarray(end))
+                # self.extracted_lines["mid"].append(np.array([round(start[0] + (end[0] - start[0]) / 2),
+                #                                              round(start[1] + (end[1] - start[1]) / 2)]).reshape(1, 2))
+                # print("mid: ", self.extracted_lines["mid"])
+
+                # self.extracted_lines["length"].append(round(norm([end[0] - start[0], end[1] - start[1]]), 2))
+
+                # start = np.asarray(lines[line_idx].start)
+                # end = np.asarray(lines[line_idx].end)
+                # mid = np.array([round(start[0] + (end[0] - start[0]) / 2), round(start[1] + (end[1] - start[1]) / 2)])
+
+                # self.extracted_lines
+                # print("start", self.extracted_lines["start"])
+                # print("end", self.extracted_lines["end"])
+                # print("length", self.extracted_lines["length"])
+
+        print("extracted features shape :", self.laser_features.shape)
 
 
     def lineListCallback(self, data):
@@ -572,14 +907,10 @@ class Localization:
         @result: TBD
         """
         # save line list if any line was measured
-        nr_lines = len(self.line_list_msg.line_segments)
-        print("line nr: ", nr_lines)
-
-        if len(self.line_list_msg.line_segments) > 0:
-            nr_lines = len(self.line_list_msg.line_segments)
-            print("line nr: ", nr_lines)
-            self.line_list_msg = data
-
+        if len(data.line_segments) > 0:
+            # print("hello: ", nr_lines)
+            self.laser_line_list = data.line_segments
+            # print(type(self.line_list))
 
     def odometryCallback(self, data):
         """

@@ -7,6 +7,7 @@ Panels:
         - /Odometry1/Shape1
         - /RobotModel1/Links1
         - /TF1/Frames1
+        - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 719
   - Class: rviz/Selection
@@ -278,7 +279,15 @@ Visualization Manager:
       Marker Topic: /map_features
       Name: Marker
       Namespaces:
-        line_extraction: true
+        {}
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /visualization_marker_array
+      Name: MarkerArray
+      Namespaces:
+        map_lines_seen: true
       Queue Size: 100
       Value: true
   Enabled: true
