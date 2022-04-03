@@ -200,6 +200,8 @@ class KalmanFilter:
         self.sensor_covariance = np.diag(rospy.get_param("/sensor_noise_model/variances"))
         # self.sensor_covariance = np.diag([1, 1, 1])
         # print("sensor covariance matrix : ", self.sensor_covariance)
+        self.count = 0
+        self.count2 = 0
 
     def predictionStep(self, control_input):
         """
@@ -251,15 +253,15 @@ class KalmanFilter:
 
         # number of predictions to be computed
         number_pred = np.shape(map_features)[0]
-        print("predictions :", number_pred)
+        # print("predictions :", number_pred)
 
         # number of observations made
         number_obs = np.shape(z_i)[0]
-        print("observations :", number_obs)
+        # print("observations :", number_obs)
 
         # z_hat: numpy array of dim (k, 3) containing the predicted measurements
         z_hat = np.zeros((number_pred, 3))
-        print("shape z_hat :", z_hat.shape)
+        # print("shape z_hat :", z_hat.shape)
 
         # jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
         jacobian_H = np.zeros((number_pred, 3, 3))
@@ -302,14 +304,14 @@ class KalmanFilter:
 
         jacobian_H_transposed = np.transpose(jacobian_H, axes=[0, 2, 1])
         innovation_S = jacobian_H @ self.last_covariance @ jacobian_H_transposed + self.sensor_covariance
-        print("shape innovation S :", innovation_S.shape)
+        # print("shape innovation S :", innovation_S.shape)
         innovation_S_inv = np.zeros_like(innovation_S)
 
         ### compute the likelihood score ###
 
         # pre-compute scaling factor of formula upfront
         determinant = matrix_det(innovation_S)
-        print("shape det innovation S :", determinant.shape)
+        # print("shape det innovation S :", determinant.shape)
         # if determinant = 0 we set to 1 to avoid division by zero
         determinant[determinant == 0] = 1
         scaling_factor = np.power(2 * np.pi * determinant, -0.5)
@@ -341,7 +343,17 @@ class KalmanFilter:
                                          np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
 
             # for each observed feature the index of the most likely among k features is retained
-            most_likely_feature = np.argmax(scores)
+            if any(scores):
+                most_likely_feature = np.argmax(scores)
+                print("not skipping correction #: ", self.count2)
+                self.count2 += 1
+
+            else:
+                print("skipping correction #: ", self.count)
+                self.count += 1
+                continue
+
+
 
             # compute Kalman gain for this observation
             kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T \
@@ -351,9 +363,9 @@ class KalmanFilter:
             # print("shape K gain :", kalman_gain.shape)
             # print("shape obs :", observation.shape)
             # print("shape z_hat :", z_hat.shape)
-            print("most likely idx :", most_likely_feature)
-            print("delta :", np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
-            print("update :", kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
+            # print("most likely idx :", most_likely_feature)
+            # print("delta :", np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
+            # print("update :", kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
 
             self.last_state_mu += kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1)
             self.last_covariance = (np.eye(3) - kalman_gain @ jacobian_H[most_likely_feature, :, :]) \
@@ -495,6 +507,11 @@ class Localization:
                         self.map_features_raw["end_y"][point]) < 260):
                 continue
 
+            if (int(self.map_features_raw["start_x"][point]) > 120 and int(self.map_features_raw["start_x"][point]) < 165) \
+                    and ((int(self.map_features_raw["start_y"][point]) > 110 and int(self.map_features_raw["start_y"][point]) < 178)
+                         or (int(self.map_features_raw["end_y"][point]) > 110 and int(self.map_features_raw["end_y"][point]) < 178)):
+                continue
+
             # convert grid to world coordinates with +/- translation to center the features on the environment
             start_point = grid_to_world(int(self.map_features_raw["start_x"][point]) + 1,
                                         int(self.map_features_raw["start_y"][point]) - 1,
@@ -584,11 +601,10 @@ class Localization:
         if self.laser_features is not None:
             # print("shape measurements: ", np.shape(self.laser_features))
             pose = self.robot_pose_estimate = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-            print("corrected pose :", pose)
+            self.robot_pose_estimate = pose
+            # print("corrected pose :", pose)
 
-        print("predicted pose :", self.robot_pose_estimate)
-
-        self.robot_pose_estimate = pose
+        # print("predicted pose :", self.robot_pose_estimate)
 
 
         ### Message editing ###
@@ -633,7 +649,7 @@ class Localization:
         points_seen_x = []
         points_seen_y = []
         feature_lengths = []
-        range_max = 11
+        range_max = 6
 
         for point in range(len(theta_start)):
             if theta_start[point] < np.pi / 2:

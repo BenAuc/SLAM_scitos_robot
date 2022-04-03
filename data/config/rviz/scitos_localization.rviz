@@ -7,6 +7,7 @@ Panels:
         - /Odometry1/Shape1
         - /RobotModel1/Links1
         - /TF1/Frames1
+        - /Pose1
         - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 719
@@ -254,7 +255,7 @@ Visualization Manager:
       Axes Length: 1
       Axes Radius: 0.10000000149011612
       Class: rviz/Pose
-      Color: 255; 25; 0
+      Color: 32; 74; 135
       Enabled: true
       Head Length: 0.30000001192092896
       Head Radius: 0.10000000149011612
@@ -279,7 +280,7 @@ Visualization Manager:
       Marker Topic: /map_features
       Name: Marker
       Namespaces:
-        {}
+        incoming_lines: true
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -318,7 +319,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 45.88180923461914
+      Distance: 24.304737091064453
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -336,7 +337,7 @@ Visualization Manager:
       Near Clip Distance: 0.009999999776482582
       Pitch: 1.2997963428497314
       Target Frame: base_footprint
-      Yaw: 3.0185694694519043
+      Yaw: 3.0135693550109863
     Saved:
       - Class: rviz/Orbit
         Distance: 1.9268096685409546
