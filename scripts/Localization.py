@@ -251,12 +251,15 @@ class KalmanFilter:
 
         # number of predictions to be computed
         number_pred = np.shape(map_features)[0]
+        print("predictions :", number_pred)
 
         # number of observations made
         number_obs = np.shape(z_i)[0]
+        print("observations :", number_obs)
 
         # z_hat: numpy array of dim (k, 3) containing the predicted measurements
-        z_hat = np.zeros_like(number_pred)
+        z_hat = np.zeros((number_pred, 3))
+        print("shape z_hat :", z_hat.shape)
 
         # jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
         jacobian_H = np.zeros((number_pred, 3, 3))
@@ -270,6 +273,8 @@ class KalmanFilter:
         # norm-2 of the vector from robot's pose to landmark
         delta_x = (map_features[:, 0] - self.last_state_mu[0])
         delta_y = (map_features[:, 1] - self.last_state_mu[1])
+        # print("shape of input: ", norm(np.array([delta_x, delta_y]), axis=0).shape)
+        # print("shape expected :", z_hat.shape)
         z_hat[:, 0] = norm(np.array([delta_x, delta_y]), axis=0)
 
         # compute partial derivatives of r
@@ -297,15 +302,17 @@ class KalmanFilter:
 
         jacobian_H_transposed = np.transpose(jacobian_H, axes=[0, 2, 1])
         innovation_S = jacobian_H @ self.last_covariance @ jacobian_H_transposed + self.sensor_covariance
+        print("shape innovation S :", innovation_S.shape)
         innovation_S_inv = np.zeros_like(innovation_S)
 
         ### compute the likelihood score ###
 
         # pre-compute scaling factor of formula upfront
         determinant = matrix_det(innovation_S)
+        print("shape det innovation S :", determinant.shape)
         # if determinant = 0 we set to 1 to avoid division by zero
         determinant[determinant == 0] = 1
-        scaling_factor = np.power(2 * np.pi * matrix_det(determinant), -0.5)
+        scaling_factor = np.power(2 * np.pi * determinant, -0.5)
 
         # pre-compute inverted innovation matrix upfront
         # catch error if matrix can't be inverted
@@ -322,7 +329,7 @@ class KalmanFilter:
         # the kalman gain is computed for this observation
         # the pose and covariance are updated
         for observation_idx in range(number_obs):
-            scores = np.zeros_like(number_pred)
+            scores = np.zeros(number_pred)
             observation = z_i[observation_idx, :]
 
             for prediction_idx in range(number_pred):
@@ -341,8 +348,15 @@ class KalmanFilter:
                           @ innovation_S_inv[most_likely_feature, :, :]
 
             # correct pose and covariance with respect to this observation
-            self.last_state_mu += kalman_gain * (observation - z_hat[most_likely_feature, :])
-            self.last_covariance = (np.eye(3) - kalman_gain * jacobian_H[most_likely_feature, :, :]) \
+            # print("shape K gain :", kalman_gain.shape)
+            # print("shape obs :", observation.shape)
+            # print("shape z_hat :", z_hat.shape)
+            print("most likely idx :", most_likely_feature)
+            print("delta :", np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
+            print("update :", kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
+
+            self.last_state_mu += kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1)
+            self.last_covariance = (np.eye(3) - kalman_gain @ jacobian_H[most_likely_feature, :, :]) \
                                    @ self.last_covariance
 
         return self.last_state_mu
@@ -358,7 +372,7 @@ class Localization:
     @output: pose as geometry_msgs PoseStamped message
     """
 
-    def __init__(self, dt):
+    def __init__(self):
         """
         class initialization
         @param: self
@@ -564,9 +578,18 @@ class Localization:
         self.laserFeatureExtraction()
         robot_pose_estimate, self.robot_pose_covariance = self.kalman_filter.predictionStep(self.control_input.copy())
         self.robot_pose_estimate = robot_pose_estimate.reshape(3, 1)
-        print("pose : ", self.robot_pose_estimate)
+        # print("pose : ", self.robot_pose_estimate)
         self.mapFeatureSelection()
-        # self.robot_pose_estimate = self.kalman_filter.correctionStep(TBD)
+
+        if self.laser_features is not None:
+            # print("shape measurements: ", np.shape(self.laser_features))
+            pose = self.robot_pose_estimate = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+            print("corrected pose :", pose)
+
+        print("predicted pose :", self.robot_pose_estimate)
+
+        self.robot_pose_estimate = pose
+
 
         ### Message editing ###
         self.predicted_state_msg.pose.position.x = self.robot_pose_estimate[0, 0]
@@ -764,7 +787,7 @@ if __name__ == '__main__':
     # go to class that provides all the functionality
     # and check for errors
     try:
-        localization = Localization(10)
+        localization = Localization()
         localization.run()
     except rospy.ROSInterruptException:
         pass
