@@ -349,11 +349,11 @@ class KalmanFilter:
             # for each observed feature the index of the most likely among k features is retained
             if any(scores):
                 most_likely_feature = np.argmax(scores)
-                print("not skipping correction #: ", self.count2)
+                # print("not skipping correction #: ", self.count2)
                 self.count2 += 1
             # if none of the scores is different from 0, no correction is effected for this observed feature
             else:
-                print("skipping correction #: ", self.count)
+                # print("skipping correction #: ", self.count)
                 self.count += 1
                 continue
 
@@ -620,7 +620,6 @@ class Localization:
 
         # publish the features selected from the map based on estimated robot pose
         self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
-
 
 
     def mapFeatureSelection(self):
