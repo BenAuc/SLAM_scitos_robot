@@ -331,9 +331,13 @@ class KalmanFilter:
         # the kalman gain is computed for this observation
         # the pose and covariance are updated
         for observation_idx in range(number_obs):
+
+            # initialization
             scores = np.zeros(number_pred)
             observation = z_i[observation_idx, :]
 
+            # for each predicted feature in the map
+            # a likelihood score is computed w.r.t. to the observed feature
             for prediction_idx in range(number_pred):
                 prediction = z_hat[prediction_idx, :]
                 delta_z = observation - prediction
@@ -347,19 +351,17 @@ class KalmanFilter:
                 most_likely_feature = np.argmax(scores)
                 print("not skipping correction #: ", self.count2)
                 self.count2 += 1
-
+            # if none of the scores is different from 0, no correction is effected for this observed feature
             else:
                 print("skipping correction #: ", self.count)
                 self.count += 1
                 continue
 
-
-
             # compute Kalman gain for this observation
             kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T \
                           @ innovation_S_inv[most_likely_feature, :, :]
 
-            # correct pose and covariance with respect to this observation
+
             # print("shape K gain :", kalman_gain.shape)
             # print("shape obs :", observation.shape)
             # print("shape z_hat :", z_hat.shape)
@@ -367,6 +369,7 @@ class KalmanFilter:
             # print("delta :", np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
             # print("update :", kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
 
+            # correct pose and covariance with respect to this observation
             self.last_state_mu += kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1)
             self.last_covariance = (np.eye(3) - kalman_gain @ jacobian_H[most_likely_feature, :, :]) \
                                    @ self.last_covariance
@@ -542,9 +545,10 @@ class Localization:
             p_end.z = 0
             self.map_features_marker_msg.points.append(p_end)
 
-            # self.map_features_start.append(np.asarray(start_point))
-            index += 1
+            ### save the features extracted from the map in the desired format for further processing
             self.map_features_start_x.append(start_point[0])
+
+            # note: the y coordinate needs to be translated like we did in the marker message
             self.map_features_start_y.append(-1 * start_point[1] + 0.66 * self.map_width)
 
             self.map_features_end_x.append(end_point[0])
@@ -552,22 +556,6 @@ class Localization:
 
             self.map_features_length.append(round(norm(np.array([end_point[0] - start_point[0],
                                                                  end_point[1] - start_point[1]])), 2))
-
-            # print("# features length :", len(self.map_features_length))
-            # print("# features start :", len(self.map_features_start_x))
-
-
-            # self.map_features_start[index, 1] = start_point[1]
-            # print("start :", self.map_features_start)
-
-
-            # self.map_features_end.append(np.asarray(end_point))
-            # self.map_features_mid.append(np.asarray(round(norm(np.array([end_point[0] - start_point[0],
-            #                                                               end_point[1] - start_point[1]])), 2)))
-
-            # print("start : ", self.map_features_mid[index, :])
-
-            # print("start x:", np.asarray(start_point)[0])
 
 
     def run(self):
@@ -592,22 +580,29 @@ class Localization:
         @result: performs the predicton and update steps. Publish pose estimate and map features.
         """
 
+        # extract the features from the latest set of range finder readings
         self.laserFeatureExtraction()
+
+        # predict next robot pose
         robot_pose_estimate, self.robot_pose_covariance = self.kalman_filter.predictionStep(self.control_input.copy())
         self.robot_pose_estimate = robot_pose_estimate.reshape(3, 1)
-        # print("pose : ", self.robot_pose_estimate)
+
+        # select which among all map features can be seen by the robot based on predicted pose
+        # this simply takes a subset of all features the map contains
         self.mapFeatureSelection()
 
+        # if any feature has been extracted from the range finder readings
         if self.laser_features is not None:
             # print("shape measurements: ", np.shape(self.laser_features))
-            pose = self.robot_pose_estimate = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+            # perform correction step on the predicted state
+            pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
             self.robot_pose_estimate = pose
             # print("corrected pose :", pose)
 
         # print("predicted pose :", self.robot_pose_estimate)
 
-
-        ### Message editing ###
+        ### Publish ###
+        # generate pose estimate message
         self.predicted_state_msg.pose.position.x = self.robot_pose_estimate[0, 0]
         self.predicted_state_msg.pose.position.y = self.robot_pose_estimate[1, 0]
         q = quaternion_from_euler(self.robot_pose_estimate[2, 0], 0, 0, 'rzyx')
@@ -616,45 +611,68 @@ class Localization:
         self.predicted_state_msg.pose.orientation.z = q[2]
         self.predicted_state_msg.pose.orientation.w = q[3]
 
-        ### Publish ###
+        # publish pose estimate message
         self.pose_pub.publish(self.predicted_state_msg)
-        # publish features
+
+        # publish all features extracted from the map
         self.map_features_marker_msg.header.stamp = rospy.get_rostime()
         self.map_features_pub.publish(self.map_features_marker_msg)
 
+        # publish the features selected from the map based on estimated robot pose
         self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
-        # if self.pub:
-        #     self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
-        #     self.pub = False
+
 
 
     def mapFeatureSelection(self):
+        """
+        Goes through all features in the map and sorts out those the robot may not be able to sense given current pose.
+        @param: self
+        @result: subset of features from all map features
+        """
 
+        # make a copy of current robot pose to avoid inconsistencies
         pose_yaw = self.robot_pose_estimate[2, 0].copy()
         pose_x = self.robot_pose_estimate[0, 0].copy()
         pose_y = self.robot_pose_estimate[1, 0].copy()
 
+        # transform the feature location (start point) in the robot frame
         delta_start_x = self.map_features_start_x - pose_x
         delta_start_y = self.map_features_start_y - pose_y
+
+        # determine yaw angle of the feature in the robot frame
         theta_start = atan2(delta_start_y, delta_start_x) - pose_yaw
+
+        # if the feature pose is beyond / below 2 * pi, we assume it can be seen by the robot
+        # therefore its yaw in the robot frame is set to 0
         theta_start[theta_start > 2 * np.pi] = 0
         theta_start[theta_start < -2 * np.pi] = 0
 
+        # do the same for all end points of the feature
         delta_end_x = self.map_features_end_x - pose_x
         delta_end_y = self.map_features_end_y - pose_y
         theta_end = atan2(delta_end_y, delta_end_x) - pose_yaw
         theta_end[theta_end > 2 * np.pi] = 0
         theta_end[theta_end < -2 * np.pi] = 0
 
+        # initialize the set of features the robot may see
         points_seen_x = []
         points_seen_y = []
         feature_lengths = []
+
+        # this parameter acts as a second filter
+        # features outside a certain radius from the robot are deemed out of reach of the range finder
+        # this method is still being tested
         range_max = 6
 
+        # for each location defining a feature
         for point in range(len(theta_start)):
+
+            # we check whether its pose is within (pi/2, -pi/2) in the robot's frame
+            # this basically checks whether the feature is in front of the robot and is visible to the range finder
             if theta_start[point] < np.pi / 2:
                 if theta_start[point] > -np.pi / 2:
 
+                    # apply second filter: check whether the feature is within a given radius away from the robot
                     if norm(np.array([delta_start_x[point], delta_start_y[point]])) < range_max:
                         # print("norm : ", norm(np.array(delta_start_x[point], delta_start_y[point])))
                         # print("delta : ", np.array([delta_start_x[point], delta_start_y[point]]))
@@ -662,9 +680,9 @@ class Localization:
                         points_seen_y.append(self.map_features_start_y[point])
                         feature_lengths.append(self.map_features_length[point])
 
+            # do the same for all end points of the features
             if theta_end[point] < np.pi / 2:
                 if theta_end[point] > -np.pi / 2:
-
                     if norm(np.array([delta_end_x[point], delta_end_y[point]])) < range_max:
                         # print("norm :", norm(np.array(delta_end_x[point], delta_end_y[point])))
                         # print("delta :", np.array(delta_end_x[point], delta_end_y[point]))
@@ -672,6 +690,10 @@ class Localization:
                         points_seen_y.append(self.map_features_end_y[point])
                         feature_lengths.append(self.map_features_length[point])
 
+        # save all start points, end points, lengths of the lines as separate features
+        # end and start points are deemed separate features simply to avoid changing the measurement model and adapting
+        # the code of the correction step
+        # the content of this variable will be used when calling the correction step
         self.map_features_sorted_out = np.zeros([len(points_seen_x), 3])
         self.map_features_sorted_out[:, 0] = points_seen_x
         self.map_features_sorted_out[:, 1] = points_seen_y
@@ -679,10 +701,11 @@ class Localization:
 
         # print("selected features shape: ", self.map_features_sorted_out.shape)
 
-        # create marker array for visualization of the seleted features
+        ### create marker array for visualization of the selected features ###
         self.map_features_seen_marker_msg.markers = []
         time_stamp = rospy.get_rostime()
 
+        # add to the marker array all features deemed visible
         for point in range(len(points_seen_x)):
             marker = Marker()
             marker.header.frame_id = "map"
@@ -717,32 +740,39 @@ class Localization:
 
 
     def laserFeatureExtraction(self):
+        """
+        Goes through all features in the list returned by the line_segment_extraction package.
+        Extracts the features and saves them in the desired format for further processing.
+        @param: self
+        @result: set of features extracted from the laser readings
+        """
 
         # extract lines from the list if any was received
         if self.laser_line_list is not None:
+
+            # make a copy in case there is another incoming message, which might create inconsistencies
             lines = self.laser_line_list.copy()
             nr_lines = len(lines)
-            # print("# of lines: ", nr_lines)
-            # self.extracted_lines = np.zeros((nr_lines, 3))
-            # self.extracted_lines = {"start": [], "mid": [], "end": [], "length": []}
 
-            # extract each line contained in the message
+            # initialize variable which will contained all features
             self.laser_features = np.zeros([nr_lines * 2, 3])
 
+            # for each lines received by the LineSegmentList message
             for line_idx in range(0, nr_lines):
-                # print("line being extracted")
-                # print("type of coordinate: ", type(lines[line_idx].start))
 
                 # extract coordinates
                 start = np.asarray(lines[line_idx].start)
                 end = np.asarray(lines[line_idx].end)
                 line_length = norm(np.array([end[0] - start[0], end[1] - start[1]]))
-                # print("length :", line_length)
 
+                # save features in desired format
+                # this variable will be fed to the correction step
                 self.laser_features[2 * line_idx, 0] = start[0]
                 self.laser_features[2 * line_idx, 1] = start[1]
                 self.laser_features[2 * line_idx, 2] = line_length
 
+                # note: each end point of a line is saved as a separate feature to avoid changing the model in the
+                # correction step
                 self.laser_features[2 * line_idx + 1, 0] = end[0]
                 self.laser_features[2 * line_idx + 1, 1] = end[1]
                 self.laser_features[2 * line_idx + 1, 2] = line_length
