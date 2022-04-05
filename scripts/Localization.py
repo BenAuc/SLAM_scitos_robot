@@ -116,12 +116,12 @@ class MotionModel:
         w = control_input[1]
 
         # estimate acceleration
-        a = control_input - self.last_control_input
+        # a = control_input - self.last_control_input
 
         # calculate the step magnitude
-        increment = np.array([(v + 0.5 * a[0, 0] * self.dt) * self.dt * np.cos(last_pose[2] + w * self.dt / 2),
-                              (v + 0.5 * a[0, 0] * self.dt) * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
-                              w * self.dt + 0.5 * a[1, 0] * np.power(self.dt, 2)], float).reshape(3, 1)
+        increment = np.array([v * self.dt * np.cos(last_pose[2] + w * self.dt / 2),
+                              v * self.dt * np.sin(last_pose[2] + w * self.dt / 2),
+                              w * self.dt], float).reshape(3, 1)
 
         # add step size to previous pose
         next_pose = last_pose + increment.reshape(3, 1)
@@ -282,20 +282,20 @@ class KalmanFilter:
         # compute partial derivatives of r
         # dr/du_x = 0.5 * (1/r) * -2 * (m_x - u_x)
         # dr/du_y = 0.5 * (1/r) * -2 * (m_y - u_y)
-        jacobian_H[:, 0, 0] = -1 * np.divide(delta_x, z_hat[:, 0])
-        jacobian_H[:, 0, 1] = -1 * np.divide(delta_y, z_hat[:, 0])
+        jacobian_H[:, 0, 0] = -1.0 * np.divide(delta_x, z_hat[:, 0])
+        jacobian_H[:, 0, 1] = -1.0 * np.divide(delta_y, z_hat[:, 0])
 
         # compute phi
         z_hat[:, 1] = atan2(delta_y, delta_x) - self.last_state_mu[2]
 
         # compute partial derivatives of phi as per the chain rule
         # and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
-        # dphi / du_x = datan2 / ddelta_x * ddelta_x / du_x = -1 * delta_y / (delta_x^2 + delta_y^2) * -1 = delta_y / (delta_x^2 + delta_y^2)
-        # dphi / du_y = datan2 / ddelta_y * ddelta_y / du_y = delta_y / (delta_x^2 + delta_y^2) * -1 = -1 * dphi / du_x
+        # dphi / du_x = datan2 / ddelta_x * ddelta_x / du_x = -1 * delta_y / (delta_x^2 + delta_y^2) * -1 = - delta_y / (delta_x^2 + delta_y^2)
+        # dphi / du_y = datan2 / ddelta_y * ddelta_y / du_y = delta_y / (delta_x^2 + delta_y^2) * -1 = delta_x / (delta_x^2 + delta_y^2)
         # dphi / du_psi = -1
-        jacobian_H[:, 1, 0] = np.divide(delta_y, np.power(delta_x, 2) + np.power(delta_y, 2))
-        jacobian_H[:, 1, 1] = -1 * jacobian_H[:, 1, 0]
-        jacobian_H[:, 1, 2] = -1
+        jacobian_H[:, 1, 0] = -1.0 * np.divide(delta_y, np.power(delta_x, 2) + np.power(delta_y, 2))
+        jacobian_H[:, 1, 1] = np.divide(delta_x, np.power(delta_x, 2) + np.power(delta_y, 2))
+        jacobian_H[:, 1, 2] = -1.0
 
         # compute s
         z_hat[:, 2] = map_features[:, 2]
@@ -310,11 +310,11 @@ class KalmanFilter:
         ### compute the likelihood score ###
 
         # pre-compute scaling factor of formula upfront
-        determinant = matrix_det(innovation_S)
+        determinant = matrix_det(2 * np.pi * innovation_S)
         # print("shape det innovation S :", determinant.shape)
         # if determinant = 0 we set to 1 to avoid division by zero
-        determinant[determinant == 0] = 1
-        scaling_factor = np.power(2 * np.pi * determinant, -0.5)
+        determinant[determinant == 0] = 0.0001
+        scaling_factor = np.power(determinant, -0.5)
 
         # pre-compute inverted innovation matrix upfront
         # catch error if matrix can't be inverted
@@ -343,8 +343,7 @@ class KalmanFilter:
                 delta_z = observation - prediction
 
                 # a set of likelihood scores is computed for each observation
-                scores[prediction_idx] = scaling_factor[prediction_idx] * \
-                                         np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
+                scores[prediction_idx] = scaling_factor[prediction_idx] * np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
 
             # for each observed feature the index of the most likely among k features is retained
             if any(scores):
@@ -580,12 +579,14 @@ class Localization:
         @result: performs the predicton and update steps. Publish pose estimate and map features.
         """
 
-        # extract the features from the latest set of range finder readings
-        self.laserFeatureExtraction()
+
 
         # predict next robot pose
         robot_pose_estimate, self.robot_pose_covariance = self.kalman_filter.predictionStep(self.control_input.copy())
         self.robot_pose_estimate = robot_pose_estimate.reshape(3, 1)
+
+        # extract the features from the latest set of range finder readings
+        self.laserFeatureExtraction()
 
         # select which among all map features can be seen by the robot based on predicted pose
         # this simply takes a subset of all features the map contains
@@ -661,33 +662,33 @@ class Localization:
         # this parameter acts as a second filter
         # features outside a certain radius from the robot are deemed out of reach of the range finder
         # this method is still being tested
-        range_max = 6
+        range_max = 12
 
         # for each location defining a feature
         for point in range(len(theta_start)):
 
             # we check whether its pose is within (pi/2, -pi/2) in the robot's frame
             # this basically checks whether the feature is in front of the robot and is visible to the range finder
-            if theta_start[point] < np.pi / 2:
-                if theta_start[point] > -np.pi / 2:
+            if np.absolute(theta_start[point]) < np.pi / 2:
+                # if theta_start[point] > -np.pi / 2:
 
-                    # apply second filter: check whether the feature is within a given radius away from the robot
-                    if norm(np.array([delta_start_x[point], delta_start_y[point]])) < range_max:
-                        # print("norm : ", norm(np.array(delta_start_x[point], delta_start_y[point])))
-                        # print("delta : ", np.array([delta_start_x[point], delta_start_y[point]]))
-                        points_seen_x.append(self.map_features_start_x[point])
-                        points_seen_y.append(self.map_features_start_y[point])
-                        feature_lengths.append(self.map_features_length[point])
+                # apply second filter: check whether the feature is within a given radius away from the robot
+                if norm(np.array([delta_start_x[point], delta_start_y[point]])) < range_max:
+                    # print("norm : ", norm(np.array(delta_start_x[point], delta_start_y[point])))
+                    # print("delta : ", np.array([delta_start_x[point], delta_start_y[point]]))
+                    points_seen_x.append(self.map_features_start_x[point])
+                    points_seen_y.append(self.map_features_start_y[point])
+                    feature_lengths.append(self.map_features_length[point])
 
             # do the same for all end points of the features
-            if theta_end[point] < np.pi / 2:
-                if theta_end[point] > -np.pi / 2:
-                    if norm(np.array([delta_end_x[point], delta_end_y[point]])) < range_max:
-                        # print("norm :", norm(np.array(delta_end_x[point], delta_end_y[point])))
-                        # print("delta :", np.array(delta_end_x[point], delta_end_y[point]))
-                        points_seen_x.append(self.map_features_end_x[point])
-                        points_seen_y.append(self.map_features_end_y[point])
-                        feature_lengths.append(self.map_features_length[point])
+            if np.absolute(theta_end[point]) < np.pi / 2:
+                # if theta_end[point] > -np.pi / 2:
+                if norm(np.array([delta_end_x[point], delta_end_y[point]])) < range_max:
+                    # print("norm :", norm(np.array(delta_end_x[point], delta_end_y[point])))
+                    # print("delta :", np.array(delta_end_x[point], delta_end_y[point]))
+                    points_seen_x.append(self.map_features_end_x[point])
+                    points_seen_y.append(self.map_features_end_y[point])
+                    feature_lengths.append(self.map_features_length[point])
 
         # save all start points, end points, lengths of the lines as separate features
         # end and start points are deemed separate features simply to avoid changing the measurement model and adapting
