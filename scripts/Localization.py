@@ -203,6 +203,11 @@ class KalmanFilter:
         self.count = 0
         self.count2 = 0
 
+        # publisher of features most likely to have been measured
+        self.most_likely_pub = rospy.Publisher("/most_likely_marker_array", MarkerArray,
+                                                queue_size=1)  # queue_size=1 => only the newest map available
+        self.most_likely_marker_msg = MarkerArray()
+
     def predictionStep(self, control_input):
         """
         This method predicts what the next system state will be.
@@ -337,6 +342,11 @@ class KalmanFilter:
 
         ### correction of state estimate and covariance ###
 
+        ### create marker array for visualization of the selected features ###
+        self.most_likely_marker_msg.markers = []
+        time_stamp = rospy.get_rostime()
+        counter = 0
+
         # for each observed feature
         # a likelihood score is computed w.r.t. each feature in the map
         # the kalman gain is computed for this observation
@@ -361,11 +371,22 @@ class KalmanFilter:
                 most_likely_feature = np.argmax(scores)
                 # print("not skipping correction #: ", self.count2)
                 self.count2 += 1
+                if scores[most_likely_feature] < 0.1:
+                    # print("**** most likely feature ****")
+                    # print("scores all too low")
+                    # print("**** END ****")
+                    continue
             # if none of the scores is different from 0, no correction is effected for this observed feature
             else:
                 # print("skipping correction #: ", self.count)
                 self.count += 1
                 continue
+
+            # print("**** most likely feature ****")
+            # print("number of features : ", number_pred)
+            # print("the score is : ", scores[most_likely_feature])
+            # print("the most likely feature is : ", most_likely_feature)
+            # print("**** END ****")
 
             # compute Kalman gain for this observation
             kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T \
@@ -379,10 +400,43 @@ class KalmanFilter:
             # print("delta :", np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
             # print("update :", kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
 
+            # add to the marker array all features deemed visible
+
+            marker = Marker()
+            marker.header.frame_id = "map"
+            marker.header.stamp = time_stamp
+            marker.ns = "most_likely_features"
+            marker.id = counter
+            marker.type = np.int(2)  # display marker as spheres
+            marker.action = np.int(0)
+            marker.lifetime = rospy.Duration.from_sec(self.dt * 1.11)
+
+            marker.pose.position.x = map_features[most_likely_feature, 0]
+            marker.pose.position.y = map_features[most_likely_feature, 1]
+            marker.pose.position.z = 0.6
+
+            marker.pose.orientation.x = 0.0
+            marker.pose.orientation.y = 0.0
+            marker.pose.orientation.z = 0.0
+            marker.pose.orientation.w = 1.0
+
+            marker.scale.x = 0.15
+            marker.scale.y = 0.15
+            marker.scale.z = 0.15
+
+            marker.color.a = 1.0
+            marker.color.r = 0.8
+            marker.color.g = 0.6
+            marker.color.b = 0.8
+            self.most_likely_marker_msg.markers.append(marker)
+            counter += 1
+
             # correct pose and covariance with respect to this observation
             self.last_state_mu += kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1)
             self.last_covariance = (np.eye(3) - kalman_gain @ jacobian_H[most_likely_feature, :, :]) \
                                    @ self.last_covariance
+
+            self.most_likely_pub.publish(self.most_likely_marker_msg)
 
         return self.last_state_mu
 
@@ -483,7 +537,6 @@ class Localization:
 
         ### fetch laser frame ###
         self.laserFrame = rospy.get_param("/robot_parameters/laserscanner_pose")
-        print("laser frame :", self.laserFrame)
 
         # get map parameters for transformation of grid into world coordinates
         self.map_width = rospy.get_param("/map/width")
@@ -609,12 +662,12 @@ class Localization:
         self.mapFeatureSelection()
 
         # if any feature has been extracted from the range finder readings
-        # if self.laser_features is not None:
-        #     # print("shape measurements: ", np.shape(self.laser_features))
-        #     # perform correction step on the predicted state
-        #     pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-        #     self.robot_pose_estimate = pose
-        #     # print("corrected pose :", pose)
+        if self.laser_features is not None:
+            # print("shape measurements: ", np.shape(self.laser_features))
+            # perform correction step on the predicted state
+            pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+            self.robot_pose_estimate = pose
+            # print("corrected pose :", pose)
 
         # print("predicted pose :", self.robot_pose_estimate)
 
@@ -1002,7 +1055,7 @@ class Localization:
         # extract lines from the list if any was received
         if self.laser_line_list is not None:
 
-            pose_yaw = -1 * self.robot_pose_estimate[2].copy()
+            pose_yaw = self.robot_pose_estimate[2].copy()
             pose_x = self.robot_pose_estimate[0].copy()
             pose_y = self.robot_pose_estimate[1].copy()
 
@@ -1052,11 +1105,47 @@ class Localization:
                 # print("y: ", self.map_features_start_y[point])
 
                 # transform from robot frame to world frame
-                x = np.multiply(self.laser_features[point, 0], np.cos(pose_yaw)) - \
-                    np.multiply(self.laser_features[point, 1], np.sin(pose_yaw)) #+ self.laserFrame[0] #+ pose_x
+                # x = np.multiply(self.laser_features[point, 0] - (pose_x), np.cos(pose_yaw)) - \
+                #     np.multiply(self.laser_features[point, 1] - (pose_y), np.sin(pose_yaw)) + pose_x #+ self.laserFrame[0]
+                #
+                # y = np.multiply(self.laser_features[point, 0] - (pose_x), np.sin(pose_yaw)) + \
+                #     np.multiply(self.laser_features[point, 1] - (pose_y), np.cos(pose_yaw)) + pose_y #+ self.laserFrame[1]
 
-                y = np.multiply(self.laser_features[point, 0], np.sin(pose_yaw)) + \
-                    np.multiply(self.laser_features[point, 1], np.cos(pose_yaw)) #+ self.laserFrame[1] #+ pose_y
+                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0], np.cos(pose_yaw)) - \
+                #     np.multiply(self.laser_features[point, 1], np.sin(pose_yaw)) + pose_x
+                #
+                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0], np.sin(pose_yaw)) + \
+                #     np.multiply(self.laser_features[point, 1], np.cos(pose_yaw)) + pose_y
+
+                x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] - pose_x, np.cos(pose_yaw)) - \
+                    np.multiply(self.laser_features[point, 1] + self.laserFrame[1] - pose_y, np.sin(pose_yaw)) + pose_x
+
+                y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] - pose_x, np.sin(pose_yaw)) + \
+                    np.multiply(self.laser_features[point, 1] + self.laserFrame[1] - pose_y, np.cos(pose_yaw)) + pose_y
+
+                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.cos(pose_yaw)) - \
+                #     np.multiply(self.laser_features[point, 1] + pose_y, np.sin(pose_yaw)) - pose_x
+                #
+                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.sin(pose_yaw)) + \
+                #     np.multiply(self.laser_features[point, 1] + pose_y, np.cos(pose_yaw)) - pose_y
+
+                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.cos(pose_yaw)) - \
+                #     np.multiply(self.laser_features[point, 1] + pose_y, np.sin(pose_yaw)) + pose_x #- self.laserFrame[0]
+                #
+                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.sin(pose_yaw)) + \
+                #     np.multiply(self.laser_features[point, 1] + pose_y, np.cos(pose_yaw)) + pose_y #+ self.laserFrame[1]
+
+                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.cos(pose_yaw)) - \
+                #     np.multiply(self.laser_features[point, 1] + pose_y, np.sin(pose_yaw)) - pose_x #- self.laserFrame[0]
+                #
+                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.sin(pose_yaw)) + \
+                #     np.multiply(self.laser_features[point, 1] + pose_y, np.cos(pose_yaw)) - pose_y #+ self.laserFrame[1]
+
+
+                # x = self.laser_features[point, 0] + self.laserFrame[0]
+                # y = self.laser_features[point, 1]
+
+                # x += self.laserFrame[0]
 
                 marker.pose.position.x = x
                 marker.pose.position.y = y
@@ -1107,6 +1196,8 @@ class Localization:
                                                axes='szyx')[0]
         # extract robot pose
         self.robot_pose_odom = [data.pose.pose.position.x, data.pose.pose.position.y]
+
+        # self.robot_pose_estimate = np.array([data.pose.pose.position.x, data.pose.pose.position.y, self.robot_yaw]).reshape(3, 1)
 
     def groundTruthCallback(self, data):
         """

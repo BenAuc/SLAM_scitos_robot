@@ -5,12 +5,12 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Odometry1/Shape1
-        - /Odometry2
         - /Odometry2/Shape1
         - /Odometry2/Covariance1
         - /RobotModel1/Links1
         - /TF1/Frames1
         - /MarkerArray1
+        - /MarkerArray3
       Splitter Ratio: 0.5
     Tree Height: 719
   - Class: rviz/Selection
@@ -301,6 +301,14 @@ Visualization Manager:
         laser_features: true
       Queue Size: 100
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /most_likely_marker_array
+      Name: MarkerArray
+      Namespaces:
+        most_likely_features: true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -329,7 +337,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 8.444093704223633
+      Distance: 18.55049705505371
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -345,9 +353,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4197969436645508
+      Pitch: 1.0997968912124634
       Target Frame: base_footprint
-      Yaw: 3.903573989868164
+      Yaw: 3.20357346534729
     Saved:
       - Class: rviz/Orbit
         Distance: 1.9268096685409546
