@@ -2,7 +2,7 @@
 <launch>
     <!--include other launch files-->
     <include file="$(find ias0060_scitos_auclair_bryan_schneider)/launch/scitos.launch">
-        <arg name="gui" value="true"/> <!--change here-->
+        <arg name="gui" value="false"/> <!--change here-->
         <arg name="headless" value="false"/>
     </include>
 
@@ -13,6 +13,11 @@
     <rosparam command="load"
         file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/map.yaml"
         ns="/map"/>
+
+    <!-- Load yaml file containing sensor frame to ros parameter server-->
+    <rosparam command="load"
+        file="$(find ias0060_scitos_auclair_bryan_schneider)/data/config/robot_parameters.yaml"
+        ns="/robot_parameters"/>
 
    <!-- Load to ros parameter servers the noise model on the control inputs-->
     <rosparam command="load"

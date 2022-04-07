@@ -228,18 +228,21 @@ class KalmanFilter:
 
         return self.last_state_mu, self.last_covariance
 
-    def correctionStep(self, map_features, z_i):
+    def correctionStep(self, map_features, laser_features):
         """
         This method corrects the state estimate and covariance from the motion model based on current measurements
          @param:map_features: numpy array of dim (k, 3) containing a subset of k features from the map, which are good
             candidates that may be observed given current robot pose, and where axis 1 contains in order m_x, m_y, m_s
 
-         @param:z_i: numpy array of dim (i, 3) containing i features extracted from the laser readings,
+         @param:laser_features: numpy array of dim (i, 3) containing i features extracted from the laser readings,
             where the axis 1 contains in order r, phi, s
 
         This method computes the following:
             *z_hat: numpy array of dim (k, 3) containing the predicted measurements,
-            where the axis 1 contains in order r, phi, s
+            where the axis 1 contains in order r, phi, s as per the measurement model
+
+            *z_i: numpy array of dim (i, 3) containing the measurements,
+            where the axis 1 contains in order r, phi, s as per the measurement model
 
             *jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
 
@@ -256,11 +259,13 @@ class KalmanFilter:
         # print("predictions :", number_pred)
 
         # number of observations made
-        number_obs = np.shape(z_i)[0]
+        number_obs = np.shape(laser_features)[0]
         # print("observations :", number_obs)
 
         # z_hat: numpy array of dim (k, 3) containing the predicted measurements
+        # z_hat: numpy array of dim (i, 3) containing the predicted measurements
         z_hat = np.zeros((number_pred, 3))
+        z_i = np.zeros((number_obs, 3))
         # print("shape z_hat :", z_hat.shape)
 
         # jacobian_H: numpy array of dim (k, 3, 3) containing the jacobian of the predicted measurements
@@ -279,6 +284,10 @@ class KalmanFilter:
         # print("shape expected :", z_hat.shape)
         z_hat[:, 0] = norm(np.array([delta_x, delta_y]), axis=0)
 
+        delta_x_i = (laser_features[:, 0] - self.last_state_mu[0])
+        delta_y_i = (laser_features[:, 1] - self.last_state_mu[1])
+        z_i[:, 0] = norm(np.array([delta_x_i, delta_y_i]), axis=0)
+
         # compute partial derivatives of r
         # dr/du_x = 0.5 * (1/r) * -2 * (m_x - u_x)
         # dr/du_y = 0.5 * (1/r) * -2 * (m_y - u_y)
@@ -287,6 +296,7 @@ class KalmanFilter:
 
         # compute phi
         z_hat[:, 1] = atan2(delta_y, delta_x) - self.last_state_mu[2]
+        z_i[:, 1] = atan2(delta_y_i, delta_x_i) - self.last_state_mu[2]
 
         # compute partial derivatives of phi as per the chain rule
         # and the formula of the partial derivatives given on wikipedia: https://en.wikipedia.org/wiki/Atan2
@@ -299,6 +309,7 @@ class KalmanFilter:
 
         # compute s
         z_hat[:, 2] = map_features[:, 2]
+        z_i[:, 2] = laser_features[:, 2]
 
         ### compute innovation matrices and initialize its inverse ###
 
@@ -430,6 +441,9 @@ class Localization:
         self.map_features_visible_pub = rospy.Publisher("/visualization_marker_array", MarkerArray,
                                                 queue_size=1)  # queue_size=1 => only the newest map available
 
+        self.laser_features_pub = rospy.Publisher("/laser_marker_array", MarkerArray,
+                                                queue_size=1)  # queue_size=1 => only the newest map available
+
         ### initialize variables to collect the list of extracted features ###
         self.laser_line_list = None
         self.laser_features = None
@@ -442,9 +456,9 @@ class Localization:
         self.predicted_state_msg.pose.position = Point()
         self.predicted_state_msg.pose.orientation = Quaternion()
 
-        ### initialize the marker array message & display settings ###
+        ### initialize the marker array messages & display settings ###
         self.map_features_seen_marker_msg = MarkerArray()
-        self.pub = True
+        self.laser_features_marker_msg = MarkerArray()
 
         ### initialize the marker message & display settings ###
         self.map_features_marker_msg = Marker()
@@ -466,6 +480,10 @@ class Localization:
         self.map_features_mid_y = []
         self.map_features_length = []
         self.map_features_sorted_out = None
+
+        ### fetch laser frame ###
+        self.laserFrame = rospy.get_param("/robot_parameters/laserscanner_pose")
+        print("laser frame :", self.laserFrame)
 
         # get map parameters for transformation of grid into world coordinates
         self.map_width = rospy.get_param("/map/width")
@@ -503,16 +521,16 @@ class Localization:
                         self.map_features_raw["end_y"][point]) < 250):
                 continue
 
-            if (int(self.map_features_raw["start_x"][point]) < 38 or int(
-                    self.map_features_raw["end_x"][point]) < 38) and \
-                    (int(self.map_features_raw["start_y"][point]) > 250 and int(
-                        self.map_features_raw["end_y"][point]) < 260):
-                continue
-
-            if (int(self.map_features_raw["start_x"][point]) > 120 and int(self.map_features_raw["start_x"][point]) < 165) \
-                    and ((int(self.map_features_raw["start_y"][point]) > 110 and int(self.map_features_raw["start_y"][point]) < 178)
-                         or (int(self.map_features_raw["end_y"][point]) > 110 and int(self.map_features_raw["end_y"][point]) < 178)):
-                continue
+            # if (int(self.map_features_raw["start_x"][point]) < 38 or int(
+            #         self.map_features_raw["end_x"][point]) < 38) and \
+            #         (int(self.map_features_raw["start_y"][point]) > 250 and int(
+            #             self.map_features_raw["end_y"][point]) < 260):
+            #     continue
+            #
+            # if (int(self.map_features_raw["start_x"][point]) > 120 and int(self.map_features_raw["start_x"][point]) < 165) \
+            #         and ((int(self.map_features_raw["start_y"][point]) > 110 and int(self.map_features_raw["start_y"][point]) < 178)
+            #              or (int(self.map_features_raw["end_y"][point]) > 110 and int(self.map_features_raw["end_y"][point]) < 178)):
+            #     continue
 
             # convert grid to world coordinates with +/- translation to center the features on the environment
             start_point = grid_to_world(int(self.map_features_raw["start_x"][point]) + 1,
@@ -579,8 +597,6 @@ class Localization:
         @result: performs the predicton and update steps. Publish pose estimate and map features.
         """
 
-
-
         # predict next robot pose
         robot_pose_estimate, self.robot_pose_covariance = self.kalman_filter.predictionStep(self.control_input.copy())
         self.robot_pose_estimate = robot_pose_estimate.reshape(3, 1)
@@ -593,12 +609,12 @@ class Localization:
         self.mapFeatureSelection()
 
         # if any feature has been extracted from the range finder readings
-        if self.laser_features is not None:
-            # print("shape measurements: ", np.shape(self.laser_features))
-            # perform correction step on the predicted state
-            pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-            self.robot_pose_estimate = pose
-            # print("corrected pose :", pose)
+        # if self.laser_features is not None:
+        #     # print("shape measurements: ", np.shape(self.laser_features))
+        #     # perform correction step on the predicted state
+        #     pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+        #     self.robot_pose_estimate = pose
+        #     # print("corrected pose :", pose)
 
         # print("predicted pose :", self.robot_pose_estimate)
 
@@ -622,6 +638,9 @@ class Localization:
         # publish the features selected from the map based on estimated robot pose
         self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
 
+        # publish the features extracted from the laser readings based on estimated robot pose
+        self.laser_features_pub.publish(self.laser_features_marker_msg)
+
 
     def mapFeatureSelection(self):
         """
@@ -631,33 +650,51 @@ class Localization:
         """
 
         # make a copy of current robot pose to avoid inconsistencies
-        pose_yaw = self.robot_pose_estimate[2, 0].copy()
-        pose_x = self.robot_pose_estimate[0, 0].copy()
-        pose_y = self.robot_pose_estimate[1, 0].copy()
+        pose_yaw = -1*self.robot_pose_estimate[2].copy()
+        # print("pose :", pose_yaw)
+        pose_x = self.robot_pose_estimate[0].copy()
+        pose_y = self.robot_pose_estimate[1].copy()
 
         # transform the feature location (start point) in the robot frame
+        # apply translation
         delta_start_x = self.map_features_start_x - pose_x
         delta_start_y = self.map_features_start_y - pose_y
 
+        # apply rotation
+        rot_start_x = np.multiply(delta_start_x, np.cos(pose_yaw)) - np.multiply(delta_start_y, np.sin(pose_yaw))
+        rot_start_y = np.multiply(delta_start_x, np.sin(pose_yaw)) + np.multiply(delta_start_y, np.cos(pose_yaw))
+
         # determine yaw angle of the feature in the robot frame
-        theta_start = atan2(delta_start_y, delta_start_x) - pose_yaw
+        # theta_start = atan2(delta_start_y, delta_start_x) - pose_yaw
+        theta_start = atan2(rot_start_y, rot_start_x)
 
         # if the feature pose is beyond / below 2 * pi, we assume it can be seen by the robot
         # therefore its yaw in the robot frame is set to 0
-        theta_start[theta_start > 2 * np.pi] = 0
-        theta_start[theta_start < -2 * np.pi] = 0
+        # theta_start[theta_start > 2 * np.pi] = 0
+        # theta_start[theta_start < -2 * np.pi] = 0
 
         # do the same for all end points of the feature
+        # apply translation
         delta_end_x = self.map_features_end_x - pose_x
         delta_end_y = self.map_features_end_y - pose_y
-        theta_end = atan2(delta_end_y, delta_end_x) - pose_yaw
-        theta_end[theta_end > 2 * np.pi] = 0
-        theta_end[theta_end < -2 * np.pi] = 0
+
+        # apply rotation
+        rot_end_x = np.multiply(delta_end_x, np.cos(pose_yaw)) - np.multiply(delta_end_y, np.sin(pose_yaw))
+        rot_end_y = np.multiply(delta_end_x, np.sin(pose_yaw)) + np.multiply(delta_end_y, np.cos(pose_yaw))
+
+        # theta_end = atan2(delta_end_y, delta_end_x) - pose_yaw
+        theta_end = atan2(rot_end_y, rot_end_x)
+        # theta_end[theta_end > 2 * np.pi] = 0
+        # theta_end[theta_end < -2 * np.pi] = 0
 
         # initialize the set of features the robot may see
         points_seen_x = []
         points_seen_y = []
         feature_lengths = []
+        points_seen_end_idx = []
+        points_seen_start_idx = []
+        points_seen_theta = []
+        points_seen_norm = []
 
         # this parameter acts as a second filter
         # features outside a certain radius from the robot are deemed out of reach of the range finder
@@ -670,25 +707,240 @@ class Localization:
             # we check whether its pose is within (pi/2, -pi/2) in the robot's frame
             # this basically checks whether the feature is in front of the robot and is visible to the range finder
             if np.absolute(theta_start[point]) < np.pi / 2:
-                # if theta_start[point] > -np.pi / 2:
+                # print("point selected")
+                # print("**************")
 
                 # apply second filter: check whether the feature is within a given radius away from the robot
-                if norm(np.array([delta_start_x[point], delta_start_y[point]])) < range_max:
+                # if norm(np.array([delta_start_x[point], delta_start_y[point]])) < range_max:
                     # print("norm : ", norm(np.array(delta_start_x[point], delta_start_y[point])))
                     # print("delta : ", np.array([delta_start_x[point], delta_start_y[point]]))
-                    points_seen_x.append(self.map_features_start_x[point])
-                    points_seen_y.append(self.map_features_start_y[point])
-                    feature_lengths.append(self.map_features_length[point])
+                points_seen_x.append(self.map_features_start_x[point])
+                points_seen_y.append(self.map_features_start_y[point])
+                points_seen_theta.append(atan2(rot_start_y[point], rot_start_x[point]))
+                points_seen_norm.append(norm(np.array([rot_start_y[point], rot_start_x[point]])))
+                feature_lengths.append(self.map_features_length[point])
+                points_seen_start_idx.append(point)
+            # else:
+                # print("point not selected")
+                # print("**************")
+
+            # print("angle : ", np.absolute(theta_start[point]))
+            # print("point x: ", self.map_features_start_x[point])
+            # print("point y: ", self.map_features_start_y[point])
 
             # do the same for all end points of the features
             if np.absolute(theta_end[point]) < np.pi / 2:
+                # print("point selected")
+                # print("**************")
+
                 # if theta_end[point] > -np.pi / 2:
-                if norm(np.array([delta_end_x[point], delta_end_y[point]])) < range_max:
+                # if norm(np.array([delta_end_x[point], delta_end_y[point]])) < range_max:
                     # print("norm :", norm(np.array(delta_end_x[point], delta_end_y[point])))
                     # print("delta :", np.array(delta_end_x[point], delta_end_y[point]))
-                    points_seen_x.append(self.map_features_end_x[point])
-                    points_seen_y.append(self.map_features_end_y[point])
-                    feature_lengths.append(self.map_features_length[point])
+                points_seen_x.append(self.map_features_end_x[point])
+                points_seen_y.append(self.map_features_end_y[point])
+                points_seen_theta.append(atan2(rot_end_y[point], rot_end_x[point]))
+                points_seen_norm.append(norm(np.array([rot_end_y[point], rot_end_x[point]])))
+                feature_lengths.append(self.map_features_length[point])
+                points_seen_end_idx.append(point)
+
+        ##############################################################################
+        # last one implemented
+        ##############################################################################
+
+        # points_seen_idx = list(set(points_seen_end_idx + points_seen_start_idx))
+        #
+        # m_y = np.divide(rot_end_y[points_seen_idx] - rot_end_x[points_seen_idx],
+        #               rot_start_y[points_seen_idx] - rot_start_x[points_seen_idx])
+        #
+        # b_y = rot_start_y[points_seen_idx] - np.multiply(rot_start_x[points_seen_idx], m_y)
+        #
+        # m_x = np.divide(rot_end_x[points_seen_idx] - rot_end_y[points_seen_idx],
+        #               rot_start_x[points_seen_idx] - rot_start_y[points_seen_idx])
+        #
+        # b_x = rot_start_x[points_seen_idx] - np.multiply(rot_start_y[points_seen_idx], m_x)
+        #
+        # theta_start_feature = atan2(rot_start_y[points_seen_idx], rot_start_x[points_seen_idx])
+        # print("size theta_start_norm :", theta_start_feature.size)
+        #
+        # theta_end_feature = atan2(rot_end_y[points_seen_idx], rot_end_x[points_seen_idx])
+        # print("size theta_end_feature :", theta_end_feature.size)
+        #
+        # # print("slope m :", m)
+        # # print("slope b :", b)
+        #
+        #
+        # for feature in range(len(m_y)):
+        #     removed = 0
+        #
+        #     if theta_start_feature[feature] < theta_end_feature[feature]:
+        #         theta1 = theta_start_feature[feature] + 0.001
+        #         theta2 = theta_end_feature[feature] - 0.001
+        #     else:
+        #         theta2 = theta_start_feature[feature] - 0.001
+        #         theta1 = theta_end_feature[feature] + 0.001
+        #
+        #     for point in range(len(points_seen_x)):
+        #
+        #         if point > (len(points_seen_x) - 1 - removed):
+        #             continue
+        #         print("**************point")
+        #         print(" point y coordinate : ", points_seen_y[point])
+        #         print("**************")
+        #
+        #         if b_x[feature] >= 0:
+        #             if m_x[feature] * points_seen_y[point] + b_x[feature] < points_seen_x[point] + 0.1:
+        #
+        #                 if points_seen_theta[point] < theta2:
+        #                     if points_seen_theta[point] > theta1:
+        #                         print("removed")
+        #                         points_seen_x.pop(point)
+        #                         points_seen_y.pop(point)
+        #                         feature_lengths.pop(point)
+        #                         removed += 1
+        #         else:
+        #             if m_x[feature] * points_seen_y[point] + b_x[feature] > points_seen_x[point] - 0.1:
+        #                 if points_seen_theta[point] < theta2:
+        #                     if points_seen_theta[point] > theta1:
+        #                         print("removed")
+        #                         points_seen_x.pop(point)
+        #                         points_seen_y.pop(point)
+        #                         feature_lengths.pop(point)
+        #                         removed += 1
+        #
+        #
+        #         if b_y[feature] >= 0:
+        #             if m_y[feature] * points_seen_x[point] + b_y[feature] < points_seen_y[point]+0.1:
+        #
+        #                 if points_seen_theta[point] < theta2:
+        #                     if points_seen_theta[point] > theta1:
+        #                         print("removed")
+        #                         points_seen_x.pop(point)
+        #                         points_seen_y.pop(point)
+        #                         feature_lengths.pop(point)
+        #                         removed += 1
+        #         else:
+        #             if m_y[feature] * points_seen_x[point] + b_y[feature] > points_seen_y[point]-0.1:
+        #                 if points_seen_theta[point] < theta2:
+        #                     if points_seen_theta[point] > theta1:
+        #                         print("removed")
+        #                         points_seen_x.pop(point)
+        #                         points_seen_y.pop(point)
+        #                         feature_lengths.pop(point)
+        #                         removed += 1
+        #     print("**************feature")
+        #     print("feature :", feature)
+        #     print("theta 1 :", theta1)
+        #     print("theta 2 :", theta2)
+        #     print("slope m:", m_y[feature])
+        #     print("slope b:", b_y[feature])
+        #     print("******************")
+        #     print("total points removed", removed)
+        #     print("remaining points : ", len(points_seen_x))
+        #     print("******************")
+        #
+        # print("******************")
+        # print("remaining points : ", len(points_seen_x))
+        # print("******************")
+
+        ##############################################################################
+
+        # theta_start_norm = norm(np.array([rot_start_y[points_seen_idx], rot_start_x[points_seen_idx]]), axis=0)
+        # # print("size theta_start_norm :", theta_start_norm.size)
+        #
+        # theta_end_norm = norm(np.array([rot_end_y[points_seen_idx], rot_end_x[points_seen_idx]]), axis=0)
+        # # print("size theta_end_norm :", theta_end_norm.size)
+        #
+        # # for feature with given angular position in the robot frame
+        # for angle in range(len(theta_start_norm)):
+        #
+        #     # make sure to capture the smallest possible angle between angular position theta1, 2
+        #     if theta_start_norm[angle] < theta_end_norm[angle]:
+        #         theta1 = theta_start_norm[angle]
+        #         theta2 = theta_end_norm[angle]
+        #     else:
+        #         theta2 = theta_start_norm[angle]
+        #         theta1 = theta_end_norm[angle]
+        #
+        #     removed = 0
+        #     theta_seen = []
+        #     # theta_seen.append(atan2(rot_start_y[points_seen_start_idx], rot_start_x[points_seen_start_idx]))
+        #     # theta_seen.append(atan2(rot_end_y[points_seen_end_idx], rot_end_x[points_seen_end_idx]))
+        #     #atan2(rot_start_y[points_seen_start_idx], rot_start_x[points_seen_start_idx])
+        #
+        #     for point in range(len(points_seen_x)):
+        #         if point > (len(points_seen_x) - 1 - removed):
+        #             continue
+        #         # we check whether its pose is within (pi/2, -pi/2) in the robot's frame
+        #         # this basically checks whether the feature is in front of the robot and is visible to the range finder
+        #         if points_seen_theta[point] < theta2:
+        #             if points_seen_theta[point] > theta1:
+        #
+        #                 if points_seen_norm[point] > theta_start_norm[angle] or points_seen_norm[point] > theta_end_norm[angle]:
+        #                     print("**************")
+        #                     print("point removed")
+        #                     print("**************")
+        #                     print("theta1 : ", theta1)
+        #                     print("theta2 : ", theta2)
+        #                     print("point angle : ", points_seen_theta[point])
+        #                     print("point x: ", points_seen_x[point])
+        #                     print("point y: ", points_seen_y[point])
+        #                     points_seen_x.pop(point)
+        #                     points_seen_y.pop(point)
+        #                     feature_lengths.pop(point)
+        #                     removed += 1
+
+        ##############################################################################
+
+        # # find closest point and the screening angle of the corresponding feature
+        # idx_closest_point = np.argmin(norm(np.array([points_seen_x, points_seen_y])))
+        # idx_closest_point = points_seen_idx[idx_closest_point]
+        #
+        # theta1_closest_point = atan2(rot_start_y[idx_closest_point], rot_start_x[idx_closest_point])
+        # theta2_closest_point = atan2(rot_end_y[idx_closest_point], rot_end_x[idx_closest_point])
+        #
+        # if theta1_closest_point > theta2_closest_point:
+        #     temp = theta1_closest_point
+        #     theta1_closest_point = theta2_closest_point
+        #     theta2_closest_point = temp
+        #
+        # theta1_closest_point += 0.001
+        # theta2_closest_point -= 0.001
+        # print("**************")
+        # print("screen")
+        # print("**************")
+        # print("theta 1 :", theta1_closest_point)
+        # print("point 1 x :", self.map_features_start_x[idx_closest_point])
+        # print("point 1 y :", self.map_features_start_x[idx_closest_point])
+        #
+        # print("theta 2 :", theta2_closest_point)
+        # print("point 2 x :", self.map_features_end_x[idx_closest_point])
+        # print("point 2 y :", self.map_features_end_x[idx_closest_point])
+        # print("**************")
+        # print("screen")
+        # print("**************")
+        #
+        # theta_seen = atan2(points_seen_y, points_seen_x)
+        # removed = 0
+        #
+        # for point in range(len(points_seen_x)):
+        #     if point > (len(points_seen_x) - 1 - removed):
+        #         continue
+        #     # we check whether its pose is within (pi/2, -pi/2) in the robot's frame
+        #     # this basically checks whether the feature is in front of the robot and is visible to the range finder
+        #     if theta_seen[point] < theta2_closest_point:
+        #         if theta_seen[point] > theta1_closest_point:
+        #             print("point removed")
+        #             print("**************")
+        #             print("angle : ", theta_seen[point])
+        #             print("point x: ", points_seen_x[point])
+        #             print("point y: ", points_seen_y[point])
+        #             points_seen_x.pop(point)
+        #             points_seen_y.pop(point)
+        #             feature_lengths.pop(point)
+        #             removed += 1
+
+        ##############################################################################
 
         # save all start points, end points, lengths of the lines as separate features
         # end and start points are deemed separate features simply to avoid changing the measurement model and adapting
@@ -721,16 +973,16 @@ class Localization:
 
             marker.pose.position.x = points_seen_x[point]
             marker.pose.position.y = points_seen_y[point]
-            marker.pose.position.z = 0.2
+            marker.pose.position.z = 0.1
 
             marker.pose.orientation.x = 0.0
             marker.pose.orientation.y = 0.0
             marker.pose.orientation.z = 0.0
             marker.pose.orientation.w = 1.0
 
-            marker.scale.x = 0.2
-            marker.scale.y = 0.2
-            marker.scale.z = 0.2
+            marker.scale.x = 0.15
+            marker.scale.y = 0.15
+            marker.scale.z = 0.15
 
             marker.color.a = 1.0
             marker.color.r = 0.0
@@ -750,6 +1002,10 @@ class Localization:
         # extract lines from the list if any was received
         if self.laser_line_list is not None:
 
+            pose_yaw = -1 * self.robot_pose_estimate[2].copy()
+            pose_x = self.robot_pose_estimate[0].copy()
+            pose_y = self.robot_pose_estimate[1].copy()
+
             # make a copy in case there is another incoming message, which might create inconsistencies
             lines = self.laser_line_list.copy()
             nr_lines = len(lines)
@@ -767,15 +1023,59 @@ class Localization:
 
                 # save features in desired format
                 # this variable will be fed to the correction step
-                self.laser_features[2 * line_idx, 0] = start[0]
-                self.laser_features[2 * line_idx, 1] = start[1]
+                self.laser_features[2 * line_idx, 0] = start[0] + pose_x
+                self.laser_features[2 * line_idx, 1] = start[1] + pose_y
                 self.laser_features[2 * line_idx, 2] = line_length
 
                 # note: each end point of a line is saved as a separate feature to avoid changing the model in the
                 # correction step
-                self.laser_features[2 * line_idx + 1, 0] = end[0]
-                self.laser_features[2 * line_idx + 1, 1] = end[1]
+                self.laser_features[2 * line_idx + 1, 0] = end[0] + pose_x
+                self.laser_features[2 * line_idx + 1, 1] = end[1] + pose_y
                 self.laser_features[2 * line_idx + 1, 2] = line_length
+
+            ### create marker array for visualization of the selected features ###
+            self.laser_features_marker_msg.markers = []
+            time_stamp = rospy.get_rostime()
+
+            # add to the marker array all features deemed visible
+            for point in range(self.laser_features.shape[0]):
+                marker = Marker()
+                marker.header.frame_id = "map"
+                marker.header.stamp = time_stamp
+                marker.ns = "laser_features"
+                marker.id = point
+                marker.type = np.int(2)  # display marker as spheres
+                marker.action = np.int(0)
+                marker.lifetime = rospy.Duration.from_sec(self.dt * 1.01)
+
+                # print("x: ", self.map_features_start_x[point])
+                # print("y: ", self.map_features_start_y[point])
+
+                # transform from robot frame to world frame
+                x = np.multiply(self.laser_features[point, 0], np.cos(pose_yaw)) - \
+                    np.multiply(self.laser_features[point, 1], np.sin(pose_yaw)) #+ self.laserFrame[0] #+ pose_x
+
+                y = np.multiply(self.laser_features[point, 0], np.sin(pose_yaw)) + \
+                    np.multiply(self.laser_features[point, 1], np.cos(pose_yaw)) #+ self.laserFrame[1] #+ pose_y
+
+                marker.pose.position.x = x
+                marker.pose.position.y = y
+                marker.pose.position.z = self.laserFrame[2]
+
+                marker.pose.orientation.x = 0.0
+                marker.pose.orientation.y = 0.0
+                marker.pose.orientation.z = 0.0
+                marker.pose.orientation.w = 1.0
+
+                marker.scale.x = 0.15
+                marker.scale.y = 0.15
+                marker.scale.z = 0.15
+
+                marker.color.a = 1.0
+                marker.color.r = 0.2
+                marker.color.g = 0.5
+                marker.color.b = 0.5
+                self.laser_features_marker_msg.markers.append(marker)
 
 
     def lineListCallback(self, data):
