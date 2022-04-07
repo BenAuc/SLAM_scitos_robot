@@ -1,5 +1,5 @@
 ### noise model params ###
 sensor_noise_model:
   # estimated variances on: output r of range finder, yaw angle from odometry, s of line length ultimately derived from range finder
-  variances: [0.03, 0.06, 0.02]
+  variances: [0.03, 0.05, 0.03]
 

@@ -371,10 +371,10 @@ class KalmanFilter:
                 most_likely_feature = np.argmax(scores)
                 # print("not skipping correction #: ", self.count2)
                 self.count2 += 1
-                if scores[most_likely_feature] < 0.1:
-                    # print("**** most likely feature ****")
-                    # print("scores all too low")
-                    # print("**** END ****")
+                if scores[most_likely_feature] < 0.000000000000000001:
+                    print("**** most likely feature ****")
+                    print("scores all too low")
+                    print("**** END ****")
                     continue
             # if none of the scores is different from 0, no correction is effected for this observed feature
             else:
@@ -409,7 +409,7 @@ class KalmanFilter:
             marker.id = counter
             marker.type = np.int(2)  # display marker as spheres
             marker.action = np.int(0)
-            marker.lifetime = rospy.Duration.from_sec(self.dt * 1.11)
+            marker.lifetime = rospy.Duration.from_sec(self.dt * 10.11)
 
             marker.pose.position.x = map_features[most_likely_feature, 0]
             marker.pose.position.y = map_features[most_likely_feature, 1]
