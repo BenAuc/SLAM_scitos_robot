@@ -595,10 +595,6 @@ class Localization:
                                       self.map_origin[0], self.map_origin[1],
                                       self.map_width, self.map_height, self.map_resolution)
 
-            # assign color to each end point of the line segment
-            color = ColorRGBA(0.0, 0.6, 0.0, 1.0)
-            self.map_features_marker_msg.colors.append(color)
-            self.map_features_marker_msg.colors.append(color)
 
             # add start point to list
             p_start = Point()
@@ -614,6 +610,24 @@ class Localization:
             p_end.z = 0
             self.map_features_marker_msg.points.append(p_end)
 
+            # assign color to each end point of the line segment
+
+            delta_y = p_end.y - p_start.y
+            delta_x = p_end.x - p_start.x
+
+            if delta_y > delta_x:
+                orientation = 1
+            else:
+                orientation = 2
+
+            if orientation == 2:
+                color = ColorRGBA(0.7, 0.3, 0.0, 1.0)
+            else:
+                color = ColorRGBA(1.0, 1.0, 1.0, 1.0)
+
+            self.map_features_marker_msg.colors.append(color)
+            self.map_features_marker_msg.colors.append(color)
+
             ### save the features extracted from the map in the desired format for further processing
             self.map_features_start_x.append(start_point[0])
 
@@ -621,19 +635,10 @@ class Localization:
             self.map_features_start_y.append(-1 * start_point[1] + 0.66 * self.map_width)
 
             self.map_features_end_x.append(end_point[0])
+
             self.map_features_end_y.append(-1 * end_point[1] + 0.66 * self.map_width)
 
-            delta_y = self.map_features_end_y[-1] - self.map_features_start_y[-1]
-            delta_x = self.map_features_end_x[-1] - self.map_features_start_x[-1]
-            print("delta y :", delta_y)
-            print("delta x :", delta_x)
-
-            if delta_y:
-                self.map_features_orientation.append(1)
-                print("code :", 1)
-            else:
-                self.map_features_orientation.append(2)
-                print("code :", 2)
+            self.map_features_orientation.append(orientation)
 
             self.map_features_length.append(round(norm(np.array([end_point[0] - start_point[0],
                                                                  end_point[1] - start_point[1]])), 2))
@@ -755,6 +760,7 @@ class Localization:
         points_seen_x = []
         points_seen_y = []
         feature_lengths = []
+        points_seen_orientation = []
         points_seen_end_idx = []
         points_seen_start_idx = []
         points_seen_theta = []
@@ -770,6 +776,18 @@ class Localization:
 
             # we check whether its pose is within (pi/2, -pi/2) in the robot's frame
             # this basically checks whether the feature is in front of the robot and is visible to the range finder
+
+            delta_y = self.map_features_end_y[point] - self.map_features_start_y[point]
+            delta_x = self.map_features_end_x[point] - self.map_features_start_x[point]
+            print("delta y :", delta_y)
+            print("delta x :", delta_x)
+
+            if delta_y:
+                orientation = 1
+            else:
+                orientation = 2
+            print("orientation :", orientation)
+
             if np.absolute(theta_start[point]) < np.pi / 2:
                 # print("point selected")
                 # print("**************")
@@ -780,6 +798,7 @@ class Localization:
                     # print("delta : ", np.array([delta_start_x[point], delta_start_y[point]]))
                 points_seen_x.append(self.map_features_start_x[point])
                 points_seen_y.append(self.map_features_start_y[point])
+                points_seen_orientation.append(orientation)
                 points_seen_theta.append(atan2(rot_start_y[point], rot_start_x[point]))
                 points_seen_norm.append(norm(np.array([rot_start_y[point], rot_start_x[point]])))
                 feature_lengths.append(self.map_features_length[point])
@@ -803,6 +822,7 @@ class Localization:
                     # print("delta :", np.array(delta_end_x[point], delta_end_y[point]))
                 points_seen_x.append(self.map_features_end_x[point])
                 points_seen_y.append(self.map_features_end_y[point])
+                points_seen_orientation.append(orientation)
                 points_seen_theta.append(atan2(rot_end_y[point], rot_end_x[point]))
                 points_seen_norm.append(norm(np.array([rot_end_y[point], rot_end_x[point]])))
                 feature_lengths.append(self.map_features_length[point])
@@ -810,6 +830,83 @@ class Localization:
 
         ##############################################################################
         # last one implemented
+        ##############################################################################
+
+        # points_seen_idx = list(set(points_seen_end_idx + points_seen_start_idx))
+        #
+        # for feature in range(len(m_y)):
+        #     removed = 0
+        #
+        #     if theta_start_feature[feature] < theta_end_feature[feature]:
+        #         theta1 = theta_start_feature[feature] + 0.001
+        #         theta2 = theta_end_feature[feature] - 0.001
+        #     else:
+        #         theta2 = theta_start_feature[feature] - 0.001
+        #         theta1 = theta_end_feature[feature] + 0.001
+        #
+        #     for point in range(len(points_seen_x)):
+        #
+        #         if point > (len(points_seen_x) - 1 - removed):
+        #             continue
+        #         print("**************point")
+        #         print(" point y coordinate : ", points_seen_y[point])
+        #         print("**************")
+        #
+        #         if b_x[feature] >= 0:
+        #             if m_x[feature] * points_seen_y[point] + b_x[feature] < points_seen_x[point] + 0.1:
+        #
+        #                 if points_seen_theta[point] < theta2:
+        #                     if points_seen_theta[point] > theta1:
+        #                         print("removed")
+        #                         points_seen_x.pop(point)
+        #                         points_seen_y.pop(point)
+        #                         feature_lengths.pop(point)
+        #                         removed += 1
+        #         else:
+        #             if m_x[feature] * points_seen_y[point] + b_x[feature] > points_seen_x[point] - 0.1:
+        #                 if points_seen_theta[point] < theta2:
+        #                     if points_seen_theta[point] > theta1:
+        #                         print("removed")
+        #                         points_seen_x.pop(point)
+        #                         points_seen_y.pop(point)
+        #                         feature_lengths.pop(point)
+        #                         removed += 1
+        #
+        #
+        #         if b_y[feature] >= 0:
+        #             if m_y[feature] * points_seen_x[point] + b_y[feature] < points_seen_y[point]+0.1:
+        #
+        #                 if points_seen_theta[point] < theta2:
+        #                     if points_seen_theta[point] > theta1:
+        #                         print("removed")
+        #                         points_seen_x.pop(point)
+        #                         points_seen_y.pop(point)
+        #                         feature_lengths.pop(point)
+        #                         removed += 1
+        #         else:
+        #             if m_y[feature] * points_seen_x[point] + b_y[feature] > points_seen_y[point]-0.1:
+        #                 if points_seen_theta[point] < theta2:
+        #                     if points_seen_theta[point] > theta1:
+        #                         print("removed")
+        #                         points_seen_x.pop(point)
+        #                         points_seen_y.pop(point)
+        #                         feature_lengths.pop(point)
+        #                         removed += 1
+        #     print("**************feature")
+        #     print("feature :", feature)
+        #     print("theta 1 :", theta1)
+        #     print("theta 2 :", theta2)
+        #     print("slope m:", m_y[feature])
+        #     print("slope b:", b_y[feature])
+        #     print("******************")
+        #     print("total points removed", removed)
+        #     print("remaining points : ", len(points_seen_x))
+        #     print("******************")
+        #
+        # print("******************")
+        # print("remaining points : ", len(points_seen_x))
+        # print("******************")
+
         ##############################################################################
 
         # points_seen_idx = list(set(points_seen_end_idx + points_seen_start_idx))
@@ -1013,7 +1110,7 @@ class Localization:
         self.map_features_sorted_out = np.zeros([len(points_seen_x), 3])
         self.map_features_sorted_out[:, 0] = points_seen_x
         self.map_features_sorted_out[:, 1] = points_seen_y
-        self.map_features_sorted_out[:, 2] = feature_lengths
+        self.map_features_sorted_out[:, 2] = points_seen_orientation
 
         # print("selected features shape: ", self.map_features_sorted_out.shape)
 
@@ -1047,11 +1144,16 @@ class Localization:
             marker.scale.x = 0.2
             marker.scale.y = 0.2
             marker.scale.z = 0.2
-
-            marker.color.a = 1.0
-            marker.color.r = 0.0
-            marker.color.g = 1.0
-            marker.color.b = 0.0
+            if self.map_features_sorted_out[point, 2] == 2:
+                marker.color.a = 1.0
+                marker.color.r = 0.7
+                marker.color.g = 0.3
+                marker.color.b = 0.0
+            else:
+                marker.color.a = 1.0
+                marker.color.r = 1.0
+                marker.color.g = 1.0
+                marker.color.b = 1.0
             self.map_features_seen_marker_msg.markers.append(marker)
 
 
