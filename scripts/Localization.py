@@ -428,6 +428,7 @@ class KalmanFilter:
             marker.color.r = 0.0
             marker.color.g = 0.0
             marker.color.b = 1.0
+
             self.most_likely_marker_msg.markers.append(marker)
             counter += 1
 
@@ -1187,17 +1188,29 @@ class Localization:
                 end = np.asarray(lines[line_idx].end)
                 line_length = norm(np.array([end[0] - start[0], end[1] - start[1]]))
 
+                delta_y = end[1] - start[1]
+                delta_x = end[0] - start[0]
+
+                print("delta y :", delta_y)
+                print("delta x :", delta_x)
+
+                if delta_y:
+                    orientation = 1
+                else:
+                    orientation = 2
+                print("orientation :", orientation)
+
                 # save features in desired format
                 # this variable will be fed to the correction step
                 self.laser_features[2 * line_idx, 0] = start[0] + pose_x
                 self.laser_features[2 * line_idx, 1] = start[1] + pose_y
-                self.laser_features[2 * line_idx, 2] = line_length
+                self.laser_features[2 * line_idx, 2] = orientation
 
                 # note: each end point of a line is saved as a separate feature to avoid changing the model in the
                 # correction step
                 self.laser_features[2 * line_idx + 1, 0] = end[0] + pose_x
                 self.laser_features[2 * line_idx + 1, 1] = end[1] + pose_y
-                self.laser_features[2 * line_idx + 1, 2] = line_length
+                self.laser_features[2 * line_idx + 1, 2] = orientation
 
             ### create marker array for visualization of the selected features ###
             self.laser_features_marker_msg.markers = []
@@ -1273,10 +1286,14 @@ class Localization:
                 marker.scale.y = 0.15
                 marker.scale.z = 0.15
 
+
                 marker.color.a = 1.0
                 marker.color.r = 1.0
                 marker.color.g = 0.0
                 marker.color.b = 0.0
+
+
+
                 self.laser_features_marker_msg.markers.append(marker)
 
 
