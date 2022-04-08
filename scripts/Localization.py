@@ -372,9 +372,9 @@ class KalmanFilter:
                 # print("not skipping correction #: ", self.count2)
                 self.count2 += 1
                 if scores[most_likely_feature] < 0.000000000000000001:
-                    print("**** most likely feature ****")
-                    print("scores all too low")
-                    print("**** END ****")
+                    # print("**** most likely feature ****")
+                    # print("scores all too low")
+                    # print("**** END ****")
                     continue
             # if none of the scores is different from 0, no correction is effected for this observed feature
             else:
@@ -420,14 +420,14 @@ class KalmanFilter:
             marker.pose.orientation.z = 0.0
             marker.pose.orientation.w = 1.0
 
-            marker.scale.x = 0.15
-            marker.scale.y = 0.15
-            marker.scale.z = 0.15
+            marker.scale.x = 0.25
+            marker.scale.y = 0.25
+            marker.scale.z = 0.25
 
             marker.color.a = 1.0
-            marker.color.r = 0.8
-            marker.color.g = 0.6
-            marker.color.b = 0.8
+            marker.color.r = 0.0
+            marker.color.g = 0.0
+            marker.color.b = 1.0
             self.most_likely_marker_msg.markers.append(marker)
             counter += 1
 
@@ -519,7 +519,7 @@ class Localization:
         self.map_features_marker_msg.ns = "incoming_lines"
         self.map_features_marker_msg.id = 0
         self.map_features_marker_msg.type = np.int(5)  # display marker as line list
-        self.map_features_marker_msg.scale.x = 0.1
+        self.map_features_marker_msg.scale.x = 0.07
         self.map_features_marker_msg.header = Header()
         self.map_features_marker_msg.header.frame_id = "map"
         self.map_features_marker_msg.header.stamp = rospy.get_rostime()
@@ -530,9 +530,8 @@ class Localization:
         self.map_features_start_y = []
         self.map_features_end_x = []
         self.map_features_end_y = []
-        self.map_features_mid_x = []
-        self.map_features_mid_y = []
         self.map_features_length = []
+        self.map_features_orientation = []
         self.map_features_sorted_out = None
 
         ### fetch laser frame ###
@@ -597,7 +596,7 @@ class Localization:
                                       self.map_width, self.map_height, self.map_resolution)
 
             # assign color to each end point of the line segment
-            color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
+            color = ColorRGBA(0.0, 0.6, 0.0, 1.0)
             self.map_features_marker_msg.colors.append(color)
             self.map_features_marker_msg.colors.append(color)
 
@@ -623,6 +622,18 @@ class Localization:
 
             self.map_features_end_x.append(end_point[0])
             self.map_features_end_y.append(-1 * end_point[1] + 0.66 * self.map_width)
+
+            delta_y = self.map_features_end_y[-1] - self.map_features_start_y[-1]
+            delta_x = self.map_features_end_x[-1] - self.map_features_start_x[-1]
+            print("delta y :", delta_y)
+            print("delta x :", delta_x)
+
+            if delta_y:
+                self.map_features_orientation.append(1)
+                print("code :", 1)
+            else:
+                self.map_features_orientation.append(2)
+                print("code :", 2)
 
             self.map_features_length.append(round(norm(np.array([end_point[0] - start_point[0],
                                                                  end_point[1] - start_point[1]])), 2))
@@ -1033,14 +1044,14 @@ class Localization:
             marker.pose.orientation.z = 0.0
             marker.pose.orientation.w = 1.0
 
-            marker.scale.x = 0.15
-            marker.scale.y = 0.15
-            marker.scale.z = 0.15
+            marker.scale.x = 0.2
+            marker.scale.y = 0.2
+            marker.scale.z = 0.2
 
             marker.color.a = 1.0
             marker.color.r = 0.0
-            marker.color.g = 0.0
-            marker.color.b = 1.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
             self.map_features_seen_marker_msg.markers.append(marker)
 
 
@@ -1097,7 +1108,7 @@ class Localization:
                 marker.header.stamp = time_stamp
                 marker.ns = "laser_features"
                 marker.id = point
-                marker.type = np.int(2)  # display marker as spheres
+                marker.type = np.int(1)  # display marker as spheres
                 marker.action = np.int(0)
                 marker.lifetime = rospy.Duration.from_sec(self.dt * 1.01)
 
@@ -1161,9 +1172,9 @@ class Localization:
                 marker.scale.z = 0.15
 
                 marker.color.a = 1.0
-                marker.color.r = 0.2
-                marker.color.g = 0.5
-                marker.color.b = 0.5
+                marker.color.r = 1.0
+                marker.color.g = 0.0
+                marker.color.b = 0.0
                 self.laser_features_marker_msg.markers.append(marker)
 
 
