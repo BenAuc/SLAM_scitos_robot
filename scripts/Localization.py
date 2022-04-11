@@ -1019,16 +1019,16 @@ class Localization:
             self.counter += 1
 
         # if any feature has been extracted from the range finder readings
-        # if (self.laser_features is not None) and (self.map_features_sorted_out is not None):
-        #     if self.control_input[1, 0] < 0.1 and self.control_input[0, 0] < 0.55:
-        #         self.mapFeatureSelection()
-        #         # print("shape measurements: ", np.shape(self.laser_features))
-        #         # perform correction step on the predicted state
-        #         pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-        #         self.robot_pose_estimate = pose
-        #         # print("corrected pose :", pose)
+        if (self.laser_features is not None) and (self.map_features_sorted_out is not None):
+            if self.control_input[1, 0] < 0.1 and self.control_input[0, 0] < 0.55:
+                self.mapFeatureSelection()
+                # print("shape measurements: ", np.shape(self.laser_features))
+                # perform correction step on the predicted state
+                pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+                self.robot_pose_estimate = pose
+                # print("corrected pose :", pose)
 
-        print("predicted pose :", self.robot_pose_estimate)
+        # print("predicted pose :", self.robot_pose_estimate)
 
         ### Publish ###
         # generate pose estimate message
