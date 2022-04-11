@@ -208,6 +208,36 @@ class KalmanFilter:
                                                 queue_size=1)  # queue_size=1 => only the newest map available
         self.most_likely_marker_msg = MarkerArray()
 
+        # publisher of innovations
+        self.innovation_pub = rospy.Publisher("/innovations", Marker,
+                                                queue_size=1)  # queue_size=1 => only the newest map available
+
+        ### initialize the marker message & display settings ###
+        self.innovation_msg = Marker()
+        self.innovation_msg.ns = "innovations"
+        self.innovation_msg.id = 0
+        self.innovation_msg.lifetime = rospy.Duration.from_sec(self.dt)
+        self.innovation_msg.type = np.int(5)  # display marker as line list
+        self.innovation_msg.scale.x = 0.07
+        self.innovation_msg.header = Header()
+        self.innovation_msg.header.frame_id = "map"
+        self.innovation_msg.header.stamp = rospy.get_rostime()
+
+        # publisher of pose updates
+        self.pose_update_pub = rospy.Publisher("/pose_updates", Marker,
+                                                queue_size=1)  # queue_size=1 => only the newest map available
+
+        ### initialize the marker message & display settings ###
+        self.pose_update_msg = Marker()
+        self.pose_update_msg.ns = "pose updates"
+        self.pose_update_msg.id = 0
+        self.pose_update_msg.lifetime = rospy.Duration.from_sec(self.dt)
+        self.pose_update_msg.type = np.int(5)  # display marker as line list
+        self.pose_update_msg.scale.x = 0.07
+        self.pose_update_msg.header = Header()
+        self.pose_update_msg.header.frame_id = "map"
+        self.pose_update_msg.header.stamp = rospy.get_rostime()
+
     def predictionStep(self, control_input):
         """
         This method predicts what the next system state will be.
@@ -259,6 +289,9 @@ class KalmanFilter:
         """
         ### initialize matrices and indices ###
 
+        # save originally predicted pose
+        pose = np.copy(self.last_state_mu)
+        print("pose :", pose)
         # number of predictions to be computed
         number_pred = np.shape(map_features)[0]
         # print("predictions :", number_pred)
@@ -347,6 +380,28 @@ class KalmanFilter:
         time_stamp = rospy.get_rostime()
         counter = 0
 
+        ### initialize the marker message & display settings ###
+        self.innovation_msg = Marker()
+        self.innovation_msg.ns = "innovations"
+        self.innovation_msg.id = 0
+        self.innovation_msg.lifetime = rospy.Duration.from_sec(50 * self.dt)
+        self.innovation_msg.type = np.int(5)  # display marker as line list
+        self.innovation_msg.scale.x = 0.07
+        self.innovation_msg.header = Header()
+        self.innovation_msg.header.frame_id = "map"
+        self.innovation_msg.header.stamp = rospy.get_rostime()
+
+        ### initialize the marker message & display settings ###
+        self.pose_update_msg = Marker()
+        self.pose_update_msg.ns = "pose updates"
+        self.pose_update_msg.id = 0
+        self.pose_update_msg.lifetime = rospy.Duration.from_sec(50 * self.dt)
+        self.pose_update_msg.type = np.int(5)  # display marker as line list
+        self.pose_update_msg.scale.x = 0.07
+        self.pose_update_msg.header = Header()
+        self.pose_update_msg.header.frame_id = "map"
+        self.pose_update_msg.header.stamp = rospy.get_rostime()
+
         # for each observed feature
         # a likelihood score is computed w.r.t. each feature in the map
         # the kalman gain is computed for this observation
@@ -395,14 +450,6 @@ class KalmanFilter:
             kalman_gain = self.last_covariance @ jacobian_H[most_likely_feature, :, :].T \
                           @ innovation_S_inv[most_likely_feature, :, :]
 
-
-            # print("shape K gain :", kalman_gain.shape)
-            # print("shape obs :", observation.shape)
-            # print("shape z_hat :", z_hat.shape)
-            # print("most likely idx :", most_likely_feature)
-            # print("delta :", np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
-            # print("update :", kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1))
-
             # add to the marker array all features deemed visible
 
             marker = Marker()
@@ -412,7 +459,7 @@ class KalmanFilter:
             marker.id = counter
             marker.type = np.int(2)  # display marker as spheres
             marker.action = np.int(0)
-            marker.lifetime = rospy.Duration.from_sec(self.dt * 20.11)
+            marker.lifetime = rospy.Duration.from_sec(self.dt * 50.11)
 
             marker.pose.position.x = map_features[most_likely_feature, 0]
             marker.pose.position.y = map_features[most_likely_feature, 1]
@@ -427,20 +474,65 @@ class KalmanFilter:
             marker.scale.y = 0.25
             marker.scale.z = 0.25
 
+            marker.color.r = 1.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
             marker.color.a = 1.0
-            marker.color.r = 0.0
-            marker.color.g = 0.0
-            marker.color.b = 1.0
 
             self.most_likely_marker_msg.markers.append(marker)
+
+            # add start point to list
+            p_start = Point()
+            p_start.x = map_features[most_likely_feature, 0]
+            p_start.y = map_features[most_likely_feature, 1]
+            p_start.z = 0
+            self.innovation_msg.points.append(p_start)
+
+            # add end point to list
+            p_end = Point()
+            p_end.x = laser_features[observation_idx, 0]
+            p_end.y = laser_features[observation_idx, 1]
+            p_end.z = 0
+            self.innovation_msg.points.append(p_end)
+
+            color = ColorRGBA(1.0, 1.0, 0.0, 1.0)
+            self.innovation_msg.colors.append(color)
+            self.innovation_msg.colors.append(color)
+
             counter += 1
 
             # correct pose and covariance with respect to this observation
-            self.last_state_mu += kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1)
+            update = kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1)
+            print("update :", update)
+
+            # add start point to list
+            p_start = Point()
+            p_start.x = pose[0, 0]
+            p_start.y = pose[1, 0]
+            p_start.z = 0
+            self.pose_update_msg.points.append(p_start)
+
+            # add end point to list
+            p_end = Point()
+            p_end.x = pose[0, 0] + update[0]
+            p_end.y = pose[1, 0] + update[1]
+            p_end.z = 0
+            self.pose_update_msg.points.append(p_end)
+
+            color = ColorRGBA(0.0, 0.0, 1.0, 1.0)
+            self.pose_update_msg.colors.append(color)
+            self.pose_update_msg.colors.append(color)
+
+            self.last_state_mu += update
+
             self.last_covariance = (np.eye(3) - kalman_gain @ jacobian_H[most_likely_feature, :, :]) \
                                    @ self.last_covariance
 
         self.most_likely_pub.publish(self.most_likely_marker_msg)
+
+        self.innovation_pub.publish(self.innovation_msg)
+
+        self.pose_update_pub.publish(self.pose_update_msg)
 
         return self.last_state_mu
 
@@ -1008,7 +1100,7 @@ class Localization:
 
         # assign either the odom or the prediction step to the pose estimate
         self.robot_pose_estimate = robot_pose_estimate.reshape(3, 1)
-        # self.robot_pose_estimate = self.robot_pose_odom
+        self.robot_pose_estimate = self.robot_pose_odom
 
         # extract the features from the latest set of range finder readings
         self.laserFeatureExtraction()
@@ -1016,22 +1108,22 @@ class Localization:
         # select which among all map features can be seen by the robot based on predicted pose
         # this simply takes a subset of all features the map contains
 
-        # if self.counter > 10:
-        #     self.mapFeatureSelection()
-        #     self.counter = 0
-        # else:
-        #     self.counter += 1
+        if self.counter > 30:
+            # if any feature has been extracted from the range finder readings
+            if (self.laser_features is not None):
+                # perform correction if robot is not moving too much
+                if self.control_input[1, 0] < 0.18 and self.control_input[0, 0] < 0.45:
+                    self.mapFeatureSelection()
+                    # print("shape measurements: ", np.shape(self.laser_features))
+                    # perform correction step on the predicted state
+                    pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+                    self.robot_pose_estimate = pose
+                    # print("corrected pose :", pose)
+            self.counter = 0
+        else:
+            self.counter += 1
 
-        # if any feature has been extracted from the range finder readings
-        if (self.laser_features is not None):
-            # perform correction if robot is not moving too much
-            if self.control_input[1, 0] < 0.18 and self.control_input[0, 0] < 0.45:
-                self.mapFeatureSelection()
-                # print("shape measurements: ", np.shape(self.laser_features))
-                # perform correction step on the predicted state
-                pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-                self.robot_pose_estimate = pose
-                # print("corrected pose :", pose)
+
 
         # print("predicted pose :", self.robot_pose_estimate)
 
