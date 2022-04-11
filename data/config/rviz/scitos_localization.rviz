@@ -306,7 +306,7 @@ Visualization Manager:
       Marker Topic: /most_likely_marker_array
       Name: MarkerArray
       Namespaces:
-        {}
+        most_likely_features: true
       Queue Size: 100
       Value: true
   Enabled: true
@@ -337,7 +337,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 25.235755920410156
+      Distance: 14.448592185974121
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -353,9 +353,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3647972047328949
+      Pitch: 0.4897971451282501
       Target Frame: base_footprint
-      Yaw: 2.3485770225524902
+      Yaw: 4.768579006195068
     Saved:
       - Class: rviz/Orbit
         Distance: 1.9268096685409546

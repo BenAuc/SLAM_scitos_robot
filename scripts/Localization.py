@@ -329,7 +329,7 @@ class KalmanFilter:
         determinant = matrix_det(2 * np.pi * innovation_S)
         # print("shape det innovation S :", determinant.shape)
         # if determinant = 0 we set to 1 to avoid division by zero
-        determinant[determinant == 0] = 0.0001
+        determinant[determinant == 0] = 0.001
         scaling_factor = np.power(determinant, -0.5)
 
         # pre-compute inverted innovation matrix upfront
@@ -367,25 +367,28 @@ class KalmanFilter:
                 scores[prediction_idx] = scaling_factor[prediction_idx] * np.exp(-0.5 * delta_z @ innovation_S_inv[prediction_idx, :, :] @ delta_z.T)
 
             # for each observed feature the index of the most likely among k features is retained
+            # print("**************************")
+            # print("looking at observation : ", observation_idx)
+            # print("**************************")
             if any(scores):
                 most_likely_feature = np.argmax(scores)
                 # print("not skipping correction #: ", self.count2)
                 self.count2 += 1
-                if scores[most_likely_feature] < 0.0000000000000001:
-                    # print("**** most likely feature ****")
-                    # print("scores all too low")
-                    # print("**** END ****")
-                    continue
             # if none of the scores is different from 0, no correction is effected for this observed feature
             else:
                 # print("skipping correction #: ", self.count)
                 self.count += 1
                 continue
 
+            if scores[most_likely_feature] < 0.01:
+                # print("**** most likely feature ****")
+                # print("scores all too low, max :", scores[most_likely_feature])
+                # print("**** END ****")
+                continue
+
             # print("**** most likely feature ****")
             # print("number of features : ", number_pred)
             # print("the score is : ", scores[most_likely_feature])
-            # print("the most likely feature is : ", most_likely_feature)
             # print("**** END ****")
 
             # compute Kalman gain for this observation
@@ -437,7 +440,7 @@ class KalmanFilter:
             self.last_covariance = (np.eye(3) - kalman_gain @ jacobian_H[most_likely_feature, :, :]) \
                                    @ self.last_covariance
 
-            self.most_likely_pub.publish(self.most_likely_marker_msg)
+        self.most_likely_pub.publish(self.most_likely_marker_msg)
 
         return self.last_state_mu
 
@@ -1003,8 +1006,9 @@ class Localization:
         # predict next robot pose
         robot_pose_estimate, self.robot_pose_covariance = self.kalman_filter.predictionStep(self.control_input.copy())
 
+        # assign either the odom or the prediction step to the pose estimate
         self.robot_pose_estimate = robot_pose_estimate.reshape(3, 1)
-        self.robot_pose_estimate = self.robot_pose_odom
+        # self.robot_pose_estimate = self.robot_pose_odom
 
         # extract the features from the latest set of range finder readings
         self.laserFeatureExtraction()
@@ -1012,15 +1016,16 @@ class Localization:
         # select which among all map features can be seen by the robot based on predicted pose
         # this simply takes a subset of all features the map contains
 
-        if self.counter > 10:
-            self.mapFeatureSelection()
-            self.counter = 0
-        else:
-            self.counter += 1
+        # if self.counter > 10:
+        #     self.mapFeatureSelection()
+        #     self.counter = 0
+        # else:
+        #     self.counter += 1
 
         # if any feature has been extracted from the range finder readings
-        if (self.laser_features is not None) and (self.map_features_sorted_out is not None):
-            if self.control_input[1, 0] < 0.1 and self.control_input[0, 0] < 0.55:
+        if (self.laser_features is not None):
+            # perform correction if robot is not moving too much
+            if self.control_input[1, 0] < 0.18 and self.control_input[0, 0] < 0.45:
                 self.mapFeatureSelection()
                 # print("shape measurements: ", np.shape(self.laser_features))
                 # perform correction step on the predicted state
@@ -1149,7 +1154,7 @@ class Localization:
                 if (not (points_seen_x[point] == self.map_features_start_x[feature])) and (
                 not (points_seen_x[point] == self.map_features_end_x[feature])):
 
-                    threshold = 0.99
+                    threshold = 0.95
                     if self.map_features_orientation[feature] == -1:
 
                         if ((points_seen_y[point] - pose_y) > 0) and ((self.map_features_start_y[feature] - pose_y) > 0):
