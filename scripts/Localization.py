@@ -371,7 +371,7 @@ class KalmanFilter:
                 most_likely_feature = np.argmax(scores)
                 # print("not skipping correction #: ", self.count2)
                 self.count2 += 1
-                if scores[most_likely_feature] < 0.000000000000000001:
+                if scores[most_likely_feature] < 0.0000000000000001:
                     # print("**** most likely feature ****")
                     # print("scores all too low")
                     # print("**** END ****")
@@ -409,7 +409,7 @@ class KalmanFilter:
             marker.id = counter
             marker.type = np.int(2)  # display marker as spheres
             marker.action = np.int(0)
-            marker.lifetime = rospy.Duration.from_sec(self.dt * 10.11)
+            marker.lifetime = rospy.Duration.from_sec(self.dt * 20.11)
 
             marker.pose.position.x = map_features[most_likely_feature, 0]
             marker.pose.position.y = map_features[most_likely_feature, 1]
@@ -544,8 +544,7 @@ class Localization:
         self.map_resolution = rospy.get_param("/map/resolution")
         self.map_origin = rospy.get_param("/map/origin")
 
-        # extract coordinates of each individual feature in the set of map features fetched from server
-        index = -1
+        ### extract real world coordinates of each map features fetched from the ROS server ###
         for point in range(0, len(self.map_features_raw["start_x"])):
 
             # filter out by trial and error the features that came out of the artefacts of the occupancy grid map
@@ -585,6 +584,17 @@ class Localization:
             #              or (int(self.map_features_raw["end_y"][point]) > 110 and int(self.map_features_raw["end_y"][point]) < 178)):
             #     continue
 
+            if int(self.map_features_raw["start_y"][point]) > 270:
+                self.map_features_raw["start_y"][point] = 270.0
+            if int(self.map_features_raw["end_y"][point]) > 270:
+                self.map_features_raw["end_y"][point] = 270.0
+
+            if int(self.map_features_raw["start_x"][point]) > 238:
+                self.map_features_raw["start_x"][point] = 238.0
+            if int(self.map_features_raw["end_x"][point]) > 238:
+                self.map_features_raw["end_x"][point] = 238.0
+
+
             # convert grid to world coordinates with +/- translation to center the features on the environment
             start_point = grid_to_world(int(self.map_features_raw["start_x"][point]) + 1,
                                         int(self.map_features_raw["start_y"][point]) - 1,
@@ -596,53 +606,376 @@ class Localization:
                                       self.map_origin[0], self.map_origin[1],
                                       self.map_width, self.map_height, self.map_resolution)
 
+            ### the start point of a line is that which is closest to the map origin ###
+            start_x = start_point[0]
+            end_x = end_point[0]
+            start_y = (-1 * start_point[1] + 0.66 * self.map_width)
+            end_y = (-1 * end_point[1] + 0.66 * self.map_width)
+
+
+            if start_point[0] < end_point[0]:
+                start_y = (-1 * start_point[1] + 0.66 * self.map_width)
+                end_y = (-1 * end_point[1] + 0.66 * self.map_width)
+
+            if start_point[0] > end_point[0]:
+                start_y = (-1 * start_point[1] + 0.66 * self.map_width)
+                end_y = (-1 * end_point[1] + 0.66 * self.map_width)
+
+            if (-1 * start_point[1] + 0.66 * self.map_width) < (-1 * end_point[1] + 0.66 * self.map_width):
+                start_y = (-1 * start_point[1] + 0.66 * self.map_width)
+                end_y = (-1 * end_point[1] + 0.66 * self.map_width)
+
+            if (-1 * start_point[1] + 0.66 * self.map_width) > (-1 * end_point[1] + 0.66 * self.map_width):
+                end_y = (-1 * start_point[1] + 0.66 * self.map_width)
+                start_y = (-1 * end_point[1] + 0.66 * self.map_width)
+
+            if start_y == 9.75:
+                start_y = 10.25
+            if end_y == 9.75:
+                end_y = 10.25
+
+            ### check line orientation i.e. vertical or horizontal
+            delta_y = end_y - start_y
+            delta_x = end_x - start_x
+
+            if delta_y > delta_x:
+                orientation = 1
+            else:
+                orientation = -1
+
+            ### save the features extracted from the map in the desired format for further processing
+            self.map_features_start_x.append(start_x)
+
+            # note: the y coordinate needs to be translated like we did in the marker message
+            self.map_features_start_y.append(start_y)
+
+            self.map_features_end_x.append(end_x)
+
+            self.map_features_end_y.append(end_y)
+
+            self.map_features_orientation.append(orientation)
+
+            self.map_features_length.append(round(norm(np.array([end_x - start_x,
+                                                                 end_y - start_y])), 2))
+
+        self.map_features_start_x.append(-4.5)
+
+        # note: the y coordinate needs to be translated like we did in the marker message
+        self.map_features_start_y.append(3.5)
+
+        self.map_features_end_x.append(-4.5)
+
+        self.map_features_end_y.append(4.35)
+
+        self.map_features_orientation.append(1)
+
+        self.map_features_length.append(5.2-3.65)
+
+        ### removing duplicate lines from the map features set ###
+        removed = 0
+        total_lines = len(self.map_features_orientation)
+
+        for line in range(0, len(self.map_features_orientation)):
+            # print("*****************")
+            # print("comparing line #:", line)
+            if line < total_lines - 1 - removed:
+                total_duplicates = len(self.map_features_orientation)
+                removed_duplicates = 0
+
+                for duplicate in range(0, len(self.map_features_orientation)):
+
+                    if duplicate < total_duplicates - 1 - removed_duplicates\
+                            and line < total_duplicates - 1 - removed_duplicates:
+
+                        if self.map_features_orientation[line] == self.map_features_orientation[duplicate]:
+
+                            if ((self.map_features_orientation[line] == -1) and \
+                                    (np.abs(self.map_features_start_y[line] - self.map_features_start_y[duplicate]) < 0.5 or
+                                            np.abs(self.map_features_end_y[line] - self.map_features_end_y[duplicate]) < 0.5 or
+
+                                     np.abs(self.map_features_start_y[line] - self.map_features_end_y[duplicate]) < 0.5 or
+                                      np.abs(self.map_features_end_y[line] - self.map_features_start_y[duplicate]) < 0.5) and \
+
+                                    (np.abs(self.map_features_start_x[line] - self.map_features_start_x[duplicate]) < 0.4 or
+                                     np.abs(self.map_features_end_x[line] - self.map_features_end_x[duplicate]) < 0.4) and \
+
+                                    self.map_features_length[line] > self.map_features_length[duplicate] and
+                            self.map_features_length[line] < 10 * self.map_features_length[duplicate]):
+
+                                # print("x-line removed")
+                                # print("line y coordinate: ", self.map_features_start_y[line])
+                                # print("duplicate y coordinate: ", self.map_features_start_y[duplicate])
+                                # print("line start x coordinate: ", self.map_features_start_x[line])
+                                # print("duplicate start x coordinate: ", self.map_features_start_x[duplicate])
+                                # print("line end x coordinate: ", self.map_features_end_x[line])
+                                # print("duplicate end x coordinate: ", self.map_features_end_x[duplicate])
+                                # print("line length: ", self.map_features_length[line])
+                                # print("duplicate length: ", self.map_features_length[duplicate])
+
+                                self.map_features_start_y.pop(duplicate)
+                                self.map_features_start_x.pop(duplicate)
+                                self.map_features_end_y.pop(duplicate)
+                                self.map_features_end_x.pop(duplicate)
+                                self.map_features_length.pop(duplicate)
+                                self.map_features_orientation.pop(duplicate)
+                                removed += 1
+                                removed_duplicates += 1
+
+                            else:
+                                if ((self.map_features_orientation[line] == 1) and \
+                                        (np.abs(
+                                            self.map_features_start_y[line] - self.map_features_start_y[
+                                                duplicate]) < 0.5 or
+                                         np.abs(self.map_features_end_y[line] - self.map_features_end_y[
+                                             duplicate]) < 0.5 or
+
+                                         np.abs(
+                                             self.map_features_start_y[line] - self.map_features_end_y[
+                                                 duplicate]) < 0.5 or
+                                         np.abs(self.map_features_end_y[line] - self.map_features_start_y[
+                                             duplicate]) < 0.5) and \
+ \
+                                        (not self.map_features_start_y[line] == self.map_features_start_y[duplicate] and
+                                         not self.map_features_end_y[line] == self.map_features_end_y[duplicate] and
+                                         not self.map_features_start_y[line] == self.map_features_end_y[duplicate] and
+                                         not self.map_features_end_y[line] == self.map_features_start_y[duplicate]) and \
+ \
+                                        (np.abs(
+                                            self.map_features_start_x[line] - self.map_features_start_x[
+                                                duplicate]) < 0.4 or
+                                         np.abs(
+                                             self.map_features_end_x[line] - self.map_features_end_x[
+                                                 duplicate]) < 0.4) and \
+ \
+                                        (self.map_features_length[line] == self.map_features_length[duplicate])):# or
+                                    #      (self.map_features_length[line] <= self.map_features_length[duplicate] and
+                                    # self.map_features_length[line] < 10 * self.map_features_length[duplicate]))):
+                                    # print("x-line removed")
+                                    # print("line y coordinate: ", self.map_features_start_y[line])
+                                    # print("duplicate y coordinate: ", self.map_features_start_y[duplicate])
+                                    # print("line start x coordinate: ", self.map_features_start_x[line])
+                                    # print("duplicate start x coordinate: ", self.map_features_start_x[duplicate])
+                                    # print("line end x coordinate: ", self.map_features_end_x[line])
+                                    # print("duplicate end x coordinate: ", self.map_features_end_x[duplicate])
+                                    # print("line length: ", self.map_features_length[line])
+                                    # print("duplicate length: ", self.map_features_length[duplicate])
+
+                                    self.map_features_start_y.pop(duplicate)
+                                    self.map_features_start_x.pop(duplicate)
+                                    self.map_features_end_y.pop(duplicate)
+                                    self.map_features_end_x.pop(duplicate)
+                                    self.map_features_length.pop(duplicate)
+                                    self.map_features_orientation.pop(duplicate)
+                                    removed += 1
+                                    removed_duplicates += 1
+                                else:
+
+                                    if ((self.map_features_orientation[line] == 1) and \
+                                            (np.abs(
+                                                self.map_features_start_x[line] - self.map_features_start_x[duplicate]) < 0.5 or
+                                             np.abs(self.map_features_end_x[line] - self.map_features_end_x[duplicate]) < 0.5 or
+
+                                             np.abs(
+                                                 self.map_features_start_x[line] - self.map_features_end_x[duplicate]) < 0.5 or
+                                             np.abs(self.map_features_end_x[line] - self.map_features_start_x[
+                                                 duplicate]) < 0.5) and \
+         \
+                                            (np.abs(
+                                                self.map_features_start_y[line] - self.map_features_start_y[duplicate]) < 0.4 or
+                                             np.abs(
+                                                 self.map_features_end_y[line] - self.map_features_end_y[duplicate]) < 0.4) and \
+         \
+                                            self.map_features_length[line] > self.map_features_length[duplicate] and
+                                            self.map_features_length[line] < 10 * self.map_features_length[duplicate]):
+
+                                        # print("y-line removed")
+                                        # print("line x coordinate: ", self.map_features_start_y[line])
+                                        # print("duplicate x coordinate: ", self.map_features_start_y[duplicate])
+                                        # print("line start y coordinate: ", self.map_features_start_x[line])
+                                        # print("duplicate start y coordinate: ", self.map_features_start_x[duplicate])
+                                        # print("line end y coordinate: ", self.map_features_end_x[line])
+                                        # print("duplicate end y coordinate: ", self.map_features_end_x[duplicate])
+                                        # print("line length: ", self.map_features_length[line])
+                                        # print("duplicate length: ", self.map_features_length[duplicate])
+
+                                        self.map_features_start_y.pop(duplicate)
+                                        self.map_features_start_x.pop(duplicate)
+                                        self.map_features_end_y.pop(duplicate)
+                                        self.map_features_end_x.pop(duplicate)
+                                        self.map_features_length.pop(duplicate)
+                                        self.map_features_orientation.pop(duplicate)
+                                        removed += 1
+                                        removed_duplicates += 1
+
+                                    else:
+                                        if ((self.map_features_orientation[line] == 1) and \
+                                                (np.abs(
+                                                    self.map_features_start_x[line] - self.map_features_start_x[
+                                                        duplicate]) < 0.5 or
+                                                 np.abs(self.map_features_end_x[line] - self.map_features_end_x[
+                                                     duplicate]) < 0.5 or
+
+                                                 np.abs(
+                                                     self.map_features_start_x[line] - self.map_features_end_x[
+                                                         duplicate]) < 0.5 or
+                                                 np.abs(self.map_features_end_x[line] - self.map_features_start_x[
+                                                     duplicate]) < 0.5) and \
+         \
+                                                (not self.map_features_start_x[line] == self.map_features_start_x[duplicate] and
+                                                 not self.map_features_end_x[line] == self.map_features_end_x[duplicate] and
+                                                    not self.map_features_start_x[line] == self.map_features_end_x[duplicate] and
+                                                 not self.map_features_end_x[line] == self.map_features_start_x[duplicate]) and \
+         \
+                                                (np.abs(
+                                                    self.map_features_start_y[line] - self.map_features_start_y[
+                                                        duplicate]) < 0.4 or
+                                                 np.abs(
+                                                     self.map_features_end_y[line] - self.map_features_end_y[
+                                                         duplicate]) < 0.4) and \
+         \
+                                                self.map_features_length[line] == self.map_features_length[duplicate]):# and
+                                                # self.map_features_length[line] < 10 * self.map_features_length[duplicate]):
+                                            # print("y-line removed")
+                                            # print("line x coordinate: ", self.map_features_start_y[line])
+                                            # print("duplicate x coordinate: ", self.map_features_start_y[duplicate])
+                                            # print("line start y coordinate: ", self.map_features_start_x[line])
+                                            # print("duplicate start y coordinate: ", self.map_features_start_x[duplicate])
+                                            # print("line end y coordinate: ", self.map_features_end_x[line])
+                                            # print("duplicate end y coordinate: ", self.map_features_end_x[duplicate])
+                                            # print("line length: ", self.map_features_length[line])
+                                            # print("duplicate length: ", self.map_features_length[duplicate])
+
+                                            self.map_features_start_y.pop(duplicate)
+                                            self.map_features_start_x.pop(duplicate)
+                                            self.map_features_end_y.pop(duplicate)
+                                            self.map_features_end_x.pop(duplicate)
+                                            self.map_features_length.pop(duplicate)
+                                            self.map_features_orientation.pop(duplicate)
+                                            removed += 1
+                                            removed_duplicates += 1
+
+
+        for line in range(0, len(self.map_features_orientation)):
+            # print("*****************")
+            # print("comparing line #:", line)
+            if line < total_lines - 1 - removed:
+                total_duplicates = len(self.map_features_orientation)
+                removed_duplicates = 0
+
+                for duplicate in range(0, len(self.map_features_orientation)):
+                    duplicate = duplicate - removed_duplicates
+
+                    if duplicate < total_duplicates - 1 - removed_duplicates\
+                            and line < total_duplicates - 1 - removed_duplicates:
+
+                        if self.map_features_orientation[line] == self.map_features_orientation[duplicate]:
+
+                            if ((not self.map_features_start_x[line] == self.map_features_start_x[duplicate]) and
+                                (not self.map_features_end_x[line] == self.map_features_end_x[duplicate]) and
+                                (not self.map_features_start_x[line] == self.map_features_end_x[duplicate]) and
+                                (not self.map_features_end_x[line] == self.map_features_start_x[duplicate])):
+
+                                threshold = 0.5
+
+                                if ((norm((self.map_features_start_x[line] - self.map_features_start_x[duplicate], self.map_features_start_y[line] - self.map_features_start_y[duplicate])) < threshold) or (
+                                        norm((self.map_features_end_x[line] - self.map_features_end_x[duplicate], self.map_features_end_y[line] - self.map_features_end_y[duplicate])) < threshold)) or (
+                                        (norm((self.map_features_start_x[line] - self.map_features_end_x[duplicate], self.map_features_start_y[line] - self.map_features_end_y[duplicate])) < threshold) or (
+                                        norm((self.map_features_end_x[line] - self.map_features_start_x[duplicate], self.map_features_end_y[line] - self.map_features_start_y[duplicate])) < threshold)):
+
+                                    #      (self.map_features_length[line] <= self.map_features_length[duplicate] and
+                                    # self.map_features_length[line] < 10 * self.map_features_length[duplicate]))):
+                                    print("x-line removed")
+                                    print("line y coordinate: ", self.map_features_start_y[line])
+                                    print("duplicate y coordinate: ", self.map_features_start_y[duplicate])
+                                    print("line start x coordinate: ", self.map_features_start_x[line])
+                                    print("duplicate start x coordinate: ",
+                                          self.map_features_start_x[duplicate])
+                                    print("line end x coordinate: ", self.map_features_end_x[line])
+                                    print("duplicate end x coordinate: ", self.map_features_end_x[duplicate])
+                                    print("line length: ", self.map_features_length[line])
+                                    print("duplicate length: ", self.map_features_length[duplicate])
+
+                                    self.map_features_start_y.pop(duplicate)
+                                    self.map_features_start_x.pop(duplicate)
+                                    self.map_features_end_y.pop(duplicate)
+                                    self.map_features_end_x.pop(duplicate)
+                                    self.map_features_length.pop(duplicate)
+                                    self.map_features_orientation.pop(duplicate)
+                                    removed_duplicates += 1
+
+        # for line in range(0, len(self.map_features_orientation)):
+        #     # print("*****************")
+        #     # print("comparing line #:", line)
+        #     if line < total_lines - 1 - removed:
+        #         total_duplicates = len(self.map_features_orientation)
+        #         removed_duplicates = 0
+        #
+        #         for duplicate in range(0, len(self.map_features_orientation)):
+        #             duplicate = duplicate - removed_duplicates
+        #
+        #             if duplicate < total_duplicates - 1 - removed_duplicates \
+        #                     and line < total_duplicates - 1 - removed_duplicates:
+        #
+        #                 if self.map_features_orientation[line] == self.map_features_orientation[duplicate]:
+        #
+        #                     if ((not self.map_features_start_x[line] == self.map_features_start_x[duplicate]) and
+        #                             (not self.map_features_end_x[line] == self.map_features_end_x[duplicate]) and
+        #                             (not self.map_features_start_x[line] == self.map_features_end_x[duplicate]) and
+        #                             (not self.map_features_end_x[line] == self.map_features_start_x[duplicate])):
+        #
+        #                         threshold = 0.5
+        #
+        #                         if (norm((self.map_features_start_x[line] - self.map_features_start_x[duplicate],
+        #                                    self.map_features_start_y[line] - self.map_features_start_y[
+        #                                        duplicate])) < threshold) or (
+        #                                     norm((self.map_features_end_x[line] - self.map_features_end_x[duplicate],
+        #                                           self.map_features_end_y[line] - self.map_features_end_y[
+        #                                               duplicate])) < threshold) or (
+        #                                 norm((self.map_features_start_x[line] - self.map_features_end_x[duplicate],
+        #                                        self.map_features_start_y[line] - self.map_features_end_y[
+        #                                            duplicate])) < threshold) or (
+        #                                         norm((self.map_features_end_x[line] - self.map_features_start_x[
+        #                                             duplicate],
+        #                                               self.map_features_end_y[line] - self.map_features_start_y[
+        #                                                   duplicate])) < threshold):
+        #                             #      (self.map_features_length[line] <= self.map_features_length[duplicate] and
+        #                             # self.map_features_length[line] < 10 * self.map_features_length[duplicate]))):
+        #                             print("x-line removed")
+        #                             self.map_features_start_y.pop(duplicate)
+        #                             self.map_features_start_x.pop(duplicate)
+        #                             self.map_features_end_y.pop(duplicate)
+        #                             self.map_features_end_x.pop(duplicate)
+        #                             self.map_features_length.pop(duplicate)
+        #                             self.map_features_orientation.pop(duplicate)
+        #                             removed_duplicates += 1
+
+        ### add each map feature to the marker array message for display ###
+        for point in range(0, len(self.map_features_start_x)):
 
             # add start point to list
             p_start = Point()
-            p_start.x = start_point[0]
-            p_start.y = -1 * start_point[1] + 0.66 * self.map_width
+            p_start.x = self.map_features_start_x[point]
+            p_start.y = self.map_features_start_y[point]
             p_start.z = 0
             self.map_features_marker_msg.points.append(p_start)
 
             # add end point to list
             p_end = Point()
-            p_end.x = end_point[0]
-            p_end.y = -1 * end_point[1] + 0.66 * self.map_width
+            p_end.x = self.map_features_end_x[point]
+            p_end.y = self.map_features_end_y[point]
             p_end.z = 0
             self.map_features_marker_msg.points.append(p_end)
 
             # assign color to each end point of the line segment
-
-            delta_y = p_end.y - p_start.y
-            delta_x = p_end.x - p_start.x
-
-            if delta_y > delta_x:
-                orientation = 1
-            else:
-                orientation = 2
-
-            if orientation == 2:
+            if self.map_features_orientation[point] == -1:
                 color = ColorRGBA(0.7, 0.3, 0.0, 1.0)
             else:
-                color = ColorRGBA(1.0, 1.0, 1.0, 1.0)
+                color = ColorRGBA(0.0, 1.0, 0.0, 1.0)
 
             self.map_features_marker_msg.colors.append(color)
             self.map_features_marker_msg.colors.append(color)
 
-            ### save the features extracted from the map in the desired format for further processing
-            self.map_features_start_x.append(start_point[0])
-
-            # note: the y coordinate needs to be translated like we did in the marker message
-            self.map_features_start_y.append(-1 * start_point[1] + 0.66 * self.map_width)
-
-            self.map_features_end_x.append(end_point[0])
-
-            self.map_features_end_y.append(-1 * end_point[1] + 0.66 * self.map_width)
-
-            self.map_features_orientation.append(orientation)
-
-            self.map_features_length.append(round(norm(np.array([end_point[0] - start_point[0],
-                                                                 end_point[1] - start_point[1]])), 2))
+        self.counter = 0
 
 
     def run(self):
@@ -669,24 +1002,33 @@ class Localization:
 
         # predict next robot pose
         robot_pose_estimate, self.robot_pose_covariance = self.kalman_filter.predictionStep(self.control_input.copy())
+
         self.robot_pose_estimate = robot_pose_estimate.reshape(3, 1)
+        self.robot_pose_estimate = self.robot_pose_odom
 
         # extract the features from the latest set of range finder readings
         self.laserFeatureExtraction()
 
         # select which among all map features can be seen by the robot based on predicted pose
         # this simply takes a subset of all features the map contains
-        self.mapFeatureSelection()
+
+        if self.counter > 10:
+            self.mapFeatureSelection()
+            self.counter = 0
+        else:
+            self.counter += 1
 
         # if any feature has been extracted from the range finder readings
-        if self.laser_features is not None:
-            # print("shape measurements: ", np.shape(self.laser_features))
-            # perform correction step on the predicted state
-            pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-            self.robot_pose_estimate = pose
-            # print("corrected pose :", pose)
+        # if (self.laser_features is not None) and (self.map_features_sorted_out is not None):
+        #     if self.control_input[1, 0] < 0.1 and self.control_input[0, 0] < 0.55:
+        #         self.mapFeatureSelection()
+        #         # print("shape measurements: ", np.shape(self.laser_features))
+        #         # perform correction step on the predicted state
+        #         pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+        #         self.robot_pose_estimate = pose
+        #         # print("corrected pose :", pose)
 
-        # print("predicted pose :", self.robot_pose_estimate)
+        print("predicted pose :", self.robot_pose_estimate)
 
         ### Publish ###
         # generate pose estimate message
@@ -738,11 +1080,6 @@ class Localization:
         # theta_start = atan2(delta_start_y, delta_start_x) - pose_yaw
         theta_start = atan2(rot_start_y, rot_start_x)
 
-        # if the feature pose is beyond / below 2 * pi, we assume it can be seen by the robot
-        # therefore its yaw in the robot frame is set to 0
-        # theta_start[theta_start > 2 * np.pi] = 0
-        # theta_start[theta_start < -2 * np.pi] = 0
-
         # do the same for all end points of the feature
         # apply translation
         delta_end_x = self.map_features_end_x - pose_x
@@ -754,8 +1091,6 @@ class Localization:
 
         # theta_end = atan2(delta_end_y, delta_end_x) - pose_yaw
         theta_end = atan2(rot_end_y, rot_end_x)
-        # theta_end[theta_end > 2 * np.pi] = 0
-        # theta_end[theta_end < -2 * np.pi] = 0
 
         # initialize the set of features the robot may see
         points_seen_x = []
@@ -767,11 +1102,6 @@ class Localization:
         points_seen_theta = []
         points_seen_norm = []
 
-        # this parameter acts as a second filter
-        # features outside a certain radius from the robot are deemed out of reach of the range finder
-        # this method is still being tested
-        range_max = 12
-
         # for each location defining a feature
         for point in range(len(theta_start)):
 
@@ -780,329 +1110,205 @@ class Localization:
 
             delta_y = self.map_features_end_y[point] - self.map_features_start_y[point]
             delta_x = self.map_features_end_x[point] - self.map_features_start_x[point]
-            print("delta y :", delta_y)
-            print("delta x :", delta_x)
-
-            if delta_y:
-                orientation = 1
-            else:
-                orientation = 2
-            print("orientation :", orientation)
+            # print("delta y :", delta_y)
+            # print("delta x :", delta_x)
 
             if np.absolute(theta_start[point]) < np.pi / 2:
-                # print("point selected")
-                # print("**************")
 
-                # apply second filter: check whether the feature is within a given radius away from the robot
-                # if norm(np.array([delta_start_x[point], delta_start_y[point]])) < range_max:
-                    # print("norm : ", norm(np.array(delta_start_x[point], delta_start_y[point])))
-                    # print("delta : ", np.array([delta_start_x[point], delta_start_y[point]]))
                 points_seen_x.append(self.map_features_start_x[point])
                 points_seen_y.append(self.map_features_start_y[point])
-                points_seen_orientation.append(orientation)
+                points_seen_orientation.append(self.map_features_orientation[point])
                 points_seen_theta.append(atan2(rot_start_y[point], rot_start_x[point]))
                 points_seen_norm.append(norm(np.array([rot_start_y[point], rot_start_x[point]])))
                 feature_lengths.append(self.map_features_length[point])
                 points_seen_start_idx.append(point)
-            # else:
-                # print("point not selected")
-                # print("**************")
-
-            # print("angle : ", np.absolute(theta_start[point]))
-            # print("point x: ", self.map_features_start_x[point])
-            # print("point y: ", self.map_features_start_y[point])
 
             # do the same for all end points of the features
             if np.absolute(theta_end[point]) < np.pi / 2:
-                # print("point selected")
-                # print("**************")
 
-                # if theta_end[point] > -np.pi / 2:
-                # if norm(np.array([delta_end_x[point], delta_end_y[point]])) < range_max:
-                    # print("norm :", norm(np.array(delta_end_x[point], delta_end_y[point])))
-                    # print("delta :", np.array(delta_end_x[point], delta_end_y[point]))
                 points_seen_x.append(self.map_features_end_x[point])
                 points_seen_y.append(self.map_features_end_y[point])
-                points_seen_orientation.append(orientation)
+                points_seen_orientation.append(self.map_features_orientation[point])
                 points_seen_theta.append(atan2(rot_end_y[point], rot_end_x[point]))
                 points_seen_norm.append(norm(np.array([rot_end_y[point], rot_end_x[point]])))
                 feature_lengths.append(self.map_features_length[point])
                 points_seen_end_idx.append(point)
 
-        ##############################################################################
-        # last one implemented
-        ##############################################################################
+        for feature in range(len(self.map_features_start_x)):
+            removed = 0
+            total_points = len(points_seen_x)
 
-        # points_seen_idx = list(set(points_seen_end_idx + points_seen_start_idx))
-        #
-        # for feature in range(len(m_y)):
-        #     removed = 0
-        #
-        #     if theta_start_feature[feature] < theta_end_feature[feature]:
-        #         theta1 = theta_start_feature[feature] + 0.001
-        #         theta2 = theta_end_feature[feature] - 0.001
-        #     else:
-        #         theta2 = theta_start_feature[feature] - 0.001
-        #         theta1 = theta_end_feature[feature] + 0.001
-        #
-        #     for point in range(len(points_seen_x)):
-        #
-        #         if point > (len(points_seen_x) - 1 - removed):
-        #             continue
-        #         print("**************point")
-        #         print(" point y coordinate : ", points_seen_y[point])
-        #         print("**************")
-        #
-        #         if b_x[feature] >= 0:
-        #             if m_x[feature] * points_seen_y[point] + b_x[feature] < points_seen_x[point] + 0.1:
-        #
-        #                 if points_seen_theta[point] < theta2:
-        #                     if points_seen_theta[point] > theta1:
-        #                         print("removed")
-        #                         points_seen_x.pop(point)
-        #                         points_seen_y.pop(point)
-        #                         feature_lengths.pop(point)
-        #                         removed += 1
-        #         else:
-        #             if m_x[feature] * points_seen_y[point] + b_x[feature] > points_seen_x[point] - 0.1:
-        #                 if points_seen_theta[point] < theta2:
-        #                     if points_seen_theta[point] > theta1:
-        #                         print("removed")
-        #                         points_seen_x.pop(point)
-        #                         points_seen_y.pop(point)
-        #                         feature_lengths.pop(point)
-        #                         removed += 1
-        #
-        #
-        #         if b_y[feature] >= 0:
-        #             if m_y[feature] * points_seen_x[point] + b_y[feature] < points_seen_y[point]+0.1:
-        #
-        #                 if points_seen_theta[point] < theta2:
-        #                     if points_seen_theta[point] > theta1:
-        #                         print("removed")
-        #                         points_seen_x.pop(point)
-        #                         points_seen_y.pop(point)
-        #                         feature_lengths.pop(point)
-        #                         removed += 1
-        #         else:
-        #             if m_y[feature] * points_seen_x[point] + b_y[feature] > points_seen_y[point]-0.1:
-        #                 if points_seen_theta[point] < theta2:
-        #                     if points_seen_theta[point] > theta1:
-        #                         print("removed")
-        #                         points_seen_x.pop(point)
-        #                         points_seen_y.pop(point)
-        #                         feature_lengths.pop(point)
-        #                         removed += 1
-        #     print("**************feature")
-        #     print("feature :", feature)
-        #     print("theta 1 :", theta1)
-        #     print("theta 2 :", theta2)
-        #     print("slope m:", m_y[feature])
-        #     print("slope b:", b_y[feature])
-        #     print("******************")
-        #     print("total points removed", removed)
-        #     print("remaining points : ", len(points_seen_x))
-        #     print("******************")
-        #
-        # print("******************")
-        # print("remaining points : ", len(points_seen_x))
-        # print("******************")
+            for point in range(len(points_seen_x)):
+                point = point - removed
+                # away = 0.2
+                # # if point_removed:
+                # #     break
+                if point >= (total_points - 1 - removed):
+                    break
 
-        ##############################################################################
+                if (not (points_seen_x[point] == self.map_features_start_x[feature])) and (
+                not (points_seen_x[point] == self.map_features_end_x[feature])):
 
-        # points_seen_idx = list(set(points_seen_end_idx + points_seen_start_idx))
-        #
-        # m_y = np.divide(rot_end_y[points_seen_idx] - rot_end_x[points_seen_idx],
-        #               rot_start_y[points_seen_idx] - rot_start_x[points_seen_idx])
-        #
-        # b_y = rot_start_y[points_seen_idx] - np.multiply(rot_start_x[points_seen_idx], m_y)
-        #
-        # m_x = np.divide(rot_end_x[points_seen_idx] - rot_end_y[points_seen_idx],
-        #               rot_start_x[points_seen_idx] - rot_start_y[points_seen_idx])
-        #
-        # b_x = rot_start_x[points_seen_idx] - np.multiply(rot_start_y[points_seen_idx], m_x)
-        #
-        # theta_start_feature = atan2(rot_start_y[points_seen_idx], rot_start_x[points_seen_idx])
-        # print("size theta_start_norm :", theta_start_feature.size)
-        #
-        # theta_end_feature = atan2(rot_end_y[points_seen_idx], rot_end_x[points_seen_idx])
-        # print("size theta_end_feature :", theta_end_feature.size)
-        #
-        # # print("slope m :", m)
-        # # print("slope b :", b)
-        #
-        #
-        # for feature in range(len(m_y)):
-        #     removed = 0
-        #
-        #     if theta_start_feature[feature] < theta_end_feature[feature]:
-        #         theta1 = theta_start_feature[feature] + 0.001
-        #         theta2 = theta_end_feature[feature] - 0.001
-        #     else:
-        #         theta2 = theta_start_feature[feature] - 0.001
-        #         theta1 = theta_end_feature[feature] + 0.001
-        #
-        #     for point in range(len(points_seen_x)):
-        #
-        #         if point > (len(points_seen_x) - 1 - removed):
-        #             continue
-        #         print("**************point")
-        #         print(" point y coordinate : ", points_seen_y[point])
-        #         print("**************")
-        #
-        #         if b_x[feature] >= 0:
-        #             if m_x[feature] * points_seen_y[point] + b_x[feature] < points_seen_x[point] + 0.1:
-        #
-        #                 if points_seen_theta[point] < theta2:
-        #                     if points_seen_theta[point] > theta1:
-        #                         print("removed")
-        #                         points_seen_x.pop(point)
-        #                         points_seen_y.pop(point)
-        #                         feature_lengths.pop(point)
-        #                         removed += 1
-        #         else:
-        #             if m_x[feature] * points_seen_y[point] + b_x[feature] > points_seen_x[point] - 0.1:
-        #                 if points_seen_theta[point] < theta2:
-        #                     if points_seen_theta[point] > theta1:
-        #                         print("removed")
-        #                         points_seen_x.pop(point)
-        #                         points_seen_y.pop(point)
-        #                         feature_lengths.pop(point)
-        #                         removed += 1
-        #
-        #
-        #         if b_y[feature] >= 0:
-        #             if m_y[feature] * points_seen_x[point] + b_y[feature] < points_seen_y[point]+0.1:
-        #
-        #                 if points_seen_theta[point] < theta2:
-        #                     if points_seen_theta[point] > theta1:
-        #                         print("removed")
-        #                         points_seen_x.pop(point)
-        #                         points_seen_y.pop(point)
-        #                         feature_lengths.pop(point)
-        #                         removed += 1
-        #         else:
-        #             if m_y[feature] * points_seen_x[point] + b_y[feature] > points_seen_y[point]-0.1:
-        #                 if points_seen_theta[point] < theta2:
-        #                     if points_seen_theta[point] > theta1:
-        #                         print("removed")
-        #                         points_seen_x.pop(point)
-        #                         points_seen_y.pop(point)
-        #                         feature_lengths.pop(point)
-        #                         removed += 1
-        #     print("**************feature")
-        #     print("feature :", feature)
-        #     print("theta 1 :", theta1)
-        #     print("theta 2 :", theta2)
-        #     print("slope m:", m_y[feature])
-        #     print("slope b:", b_y[feature])
-        #     print("******************")
-        #     print("total points removed", removed)
-        #     print("remaining points : ", len(points_seen_x))
-        #     print("******************")
-        #
-        # print("******************")
-        # print("remaining points : ", len(points_seen_x))
-        # print("******************")
+                    threshold = 0.99
+                    if self.map_features_orientation[feature] == -1:
 
-        ##############################################################################
+                        if ((points_seen_y[point] - pose_y) > 0) and ((self.map_features_start_y[feature] - pose_y) > 0):
 
-        # theta_start_norm = norm(np.array([rot_start_y[points_seen_idx], rot_start_x[points_seen_idx]]), axis=0)
-        # # print("size theta_start_norm :", theta_start_norm.size)
-        #
-        # theta_end_norm = norm(np.array([rot_end_y[points_seen_idx], rot_end_x[points_seen_idx]]), axis=0)
-        # # print("size theta_end_norm :", theta_end_norm.size)
-        #
-        # # for feature with given angular position in the robot frame
-        # for angle in range(len(theta_start_norm)):
-        #
-        #     # make sure to capture the smallest possible angle between angular position theta1, 2
-        #     if theta_start_norm[angle] < theta_end_norm[angle]:
-        #         theta1 = theta_start_norm[angle]
-        #         theta2 = theta_end_norm[angle]
-        #     else:
-        #         theta2 = theta_start_norm[angle]
-        #         theta1 = theta_end_norm[angle]
-        #
-        #     removed = 0
-        #     theta_seen = []
-        #     # theta_seen.append(atan2(rot_start_y[points_seen_start_idx], rot_start_x[points_seen_start_idx]))
-        #     # theta_seen.append(atan2(rot_end_y[points_seen_end_idx], rot_end_x[points_seen_end_idx]))
-        #     #atan2(rot_start_y[points_seen_start_idx], rot_start_x[points_seen_start_idx])
-        #
-        #     for point in range(len(points_seen_x)):
-        #         if point > (len(points_seen_x) - 1 - removed):
-        #             continue
-        #         # we check whether its pose is within (pi/2, -pi/2) in the robot's frame
-        #         # this basically checks whether the feature is in front of the robot and is visible to the range finder
-        #         if points_seen_theta[point] < theta2:
-        #             if points_seen_theta[point] > theta1:
-        #
-        #                 if points_seen_norm[point] > theta_start_norm[angle] or points_seen_norm[point] > theta_end_norm[angle]:
-        #                     print("**************")
-        #                     print("point removed")
-        #                     print("**************")
-        #                     print("theta1 : ", theta1)
-        #                     print("theta2 : ", theta2)
-        #                     print("point angle : ", points_seen_theta[point])
-        #                     print("point x: ", points_seen_x[point])
-        #                     print("point y: ", points_seen_y[point])
-        #                     points_seen_x.pop(point)
-        #                     points_seen_y.pop(point)
-        #                     feature_lengths.pop(point)
-        #                     removed += 1
+                            if (points_seen_y[point] - pose_y) > (self.map_features_start_y[feature] - pose_y):
 
-        ##############################################################################
 
-        # # find closest point and the screening angle of the corresponding feature
-        # idx_closest_point = np.argmin(norm(np.array([points_seen_x, points_seen_y])))
-        # idx_closest_point = points_seen_idx[idx_closest_point]
-        #
-        # theta1_closest_point = atan2(rot_start_y[idx_closest_point], rot_start_x[idx_closest_point])
-        # theta2_closest_point = atan2(rot_end_y[idx_closest_point], rot_end_x[idx_closest_point])
-        #
-        # if theta1_closest_point > theta2_closest_point:
-        #     temp = theta1_closest_point
-        #     theta1_closest_point = theta2_closest_point
-        #     theta2_closest_point = temp
-        #
-        # theta1_closest_point += 0.001
-        # theta2_closest_point -= 0.001
-        # print("**************")
-        # print("screen")
-        # print("**************")
-        # print("theta 1 :", theta1_closest_point)
-        # print("point 1 x :", self.map_features_start_x[idx_closest_point])
-        # print("point 1 y :", self.map_features_start_x[idx_closest_point])
-        #
-        # print("theta 2 :", theta2_closest_point)
-        # print("point 2 x :", self.map_features_end_x[idx_closest_point])
-        # print("point 2 y :", self.map_features_end_x[idx_closest_point])
-        # print("**************")
-        # print("screen")
-        # print("**************")
-        #
-        # theta_seen = atan2(points_seen_y, points_seen_x)
-        # removed = 0
-        #
+                                if ((points_seen_x[point] > (2-threshold) * self.map_features_start_x[feature]) and
+                                        (points_seen_x[point] < (threshold) * self.map_features_end_x[feature])):
+                                    # print("**********point removed ****************")
+                                    # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+                                    # print("feature start x,y: ", self.map_features_start_x[feature],
+                                    #       self.map_features_start_y[feature])
+                                    # print("feature end x,y: ", self.map_features_end_x[feature],
+                                    #       self.map_features_end_y[feature])
+                                    # print("***************")
+                                    point_removed = True
+                                    points_seen_x.pop(point)
+                                    points_seen_y.pop(point)
+                                    feature_lengths.pop(point)
+                                    points_seen_orientation.pop(point)
+                                    removed += 1
+
+                    if self.map_features_orientation[feature] == 1:
+
+                        if ((points_seen_x[point] - pose_x) > 0) and (
+                                (self.map_features_start_x[feature] - pose_x) > 0):
+
+                            if (points_seen_x[point] - pose_x) > (self.map_features_start_x[feature] - pose_x):
+
+                                if ((points_seen_y[point] > (2-threshold) * self.map_features_start_y[feature]) and
+                                        (points_seen_y[point] < threshold * self.map_features_end_y[feature])):
+                                    # print("**********point removed ****************")
+                                    # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+                                    # print("feature start x,y: ", self.map_features_start_x[feature],
+                                    #       self.map_features_start_y[feature])
+                                    # print("feature end x,y: ", self.map_features_end_x[feature],
+                                    #       self.map_features_end_y[feature])
+                                    # print("***************")
+                                    point_removed = True
+                                    points_seen_x.pop(point)
+                                    points_seen_y.pop(point)
+                                    feature_lengths.pop(point)
+                                    points_seen_orientation.pop(point)
+                                    removed += 1
+
+                        # print("*************point looked at****************")
+                        # print("looking at point #: ", point)
+                        # print("looking at feature #: ", feature)
+                        # print("length of seen points #: ", len(points_seen_x))
+                        # print("# of total points: ", total_points)
+                        # print("# of removed points: ", removed)
+                        # print("length of feature set #: ", len(self.map_features_start_x))
+
+                        if ((points_seen_x[point] - pose_x) < 0) and (
+                                (self.map_features_start_x[feature] - pose_x) < 0):
+
+                            if (points_seen_x[point] - pose_x) < (self.map_features_start_x[feature] - pose_x):
+
+                                if ((points_seen_y[point] > (2-threshold) * self.map_features_start_y[feature]) and
+                                        (points_seen_y[point] < threshold * self.map_features_end_y[feature])):
+                                    # print("*********point removed **********")
+                                    # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+                                    # print("feature start x,y: ", self.map_features_start_x[feature],
+                                    #       self.map_features_start_y[feature])
+                                    # print("feature end x,y: ", self.map_features_end_x[feature],
+                                    #       self.map_features_end_y[feature])
+                                    # print("***************")
+                                    point_removed = True
+                                    points_seen_x.pop(point)
+                                    points_seen_y.pop(point)
+                                    feature_lengths.pop(point)
+                                    points_seen_orientation.pop(point)
+                                    removed += 1
+
+
+        ######################################begin of backup####################################
+
         # for point in range(len(points_seen_x)):
-        #     if point > (len(points_seen_x) - 1 - removed):
-        #         continue
-        #     # we check whether its pose is within (pi/2, -pi/2) in the robot's frame
-        #     # this basically checks whether the feature is in front of the robot and is visible to the range finder
-        #     if theta_seen[point] < theta2_closest_point:
-        #         if theta_seen[point] > theta1_closest_point:
-        #             print("point removed")
-        #             print("**************")
-        #             print("angle : ", theta_seen[point])
-        #             print("point x: ", points_seen_x[point])
-        #             print("point y: ", points_seen_y[point])
-        #             points_seen_x.pop(point)
-        #             points_seen_y.pop(point)
-        #             feature_lengths.pop(point)
-        #             removed += 1
+        #     point = point - removed
+        #     # print("point getting check :", point)
+        #     point_removed = False
+        #     if point < (total_points - 1):
+        #         for feature in range(len(self.map_features_start_x)):
+        #
+        #             away = 0.2
+        #             if point_removed:
+        #                 break
+        #
+        #             if (not (points_seen_x[point] == self.map_features_start_x[feature])) and (not (points_seen_x[point] == self.map_features_end_x[feature])):
+        #
+        #                 if self.map_features_orientation[feature] == -1:
+        #
+        #                     if ((points_seen_y[point] - pose_y) > 0) and ((self.map_features_start_y[feature] - pose_y) > 0):
+        #
+        #                         if (points_seen_y[point] - pose_y) > (self.map_features_start_y[feature] - pose_y):
+        #
+        #                             if ((points_seen_x[point] > self.map_features_start_x[feature]) and
+        #                                 (points_seen_x[point] < self.map_features_end_x[feature])):
+        #
+        #                                 print("**********point removed ****************")
+        #                                 print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+        #                                 print("feature start x,y: ", self.map_features_start_x[feature], self.map_features_start_y[feature])
+        #                                 print("feature end x,y: ", self.map_features_end_x[feature], self.map_features_end_y[feature])
+        #                                 print("***************")
+        #                                 point_removed = True
+        #                                 points_seen_x.pop(point)
+        #                                 points_seen_y.pop(point)
+        #                                 feature_lengths.pop(point)
+        #                                 points_seen_orientation.pop(point)
+        #                                 removed += 1
+        #
+        #                 if self.map_features_orientation[feature] == 1:
+        #
+        #                     if ((points_seen_x[point] - pose_x) > 0) and (
+        #                             (self.map_features_start_x[feature] - pose_x) > 0):
+        #
+        #                         if (points_seen_x[point] - pose_x) > (self.map_features_start_x[feature] - pose_x):
+        #
+        #                             if ((points_seen_y[point] > self.map_features_start_y[feature]) and
+        #                                     (points_seen_y[point] < self.map_features_end_y[feature])):
+        #
+        #                                 print("**********point removed ****************")
+        #                                 print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+        #                                 print("feature start x,y: ", self.map_features_start_x[feature],
+        #                                       self.map_features_start_y[feature])
+        #                                 print("feature end x,y: ", self.map_features_end_x[feature],
+        #                                       self.map_features_end_y[feature])
+        #                                 print("***************")
+        #                                 point_removed = True
+        #                                 points_seen_x.pop(point)
+        #                                 points_seen_y.pop(point)
+        #                                 feature_lengths.pop(point)
+        #                                 points_seen_orientation.pop(point)
+        #                                 removed += 1
+        #
+        #                     if ((points_seen_x[point] - pose_x) < 0) and (
+        #                             (self.map_features_start_x[feature] - pose_x) < 0):
+        #
+        #                         if (points_seen_x[point] - pose_x) < (self.map_features_start_x[feature] - pose_x):
+        #
+        #                             if ((points_seen_y[point] > self.map_features_start_y[feature]) and
+        #                                     (points_seen_y[point] < self.map_features_end_y[feature])):
+        #
+        #                                 print("**********point removed ****************")
+        #                                 print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+        #                                 print("feature start x,y: ", self.map_features_start_x[feature],
+        #                                       self.map_features_start_y[feature])
+        #                                 print("feature end x,y: ", self.map_features_end_x[feature],
+        #                                       self.map_features_end_y[feature])
+        #                                 print("***************")
+        #                                 point_removed = True
+        #                                 points_seen_x.pop(point)
+        #                                 points_seen_y.pop(point)
+        #                                 feature_lengths.pop(point)
+        #                                 points_seen_orientation.pop(point)
+        #                                 removed += 1
 
-        ##############################################################################
+        ######################################end of backup####################################
 
         # save all start points, end points, lengths of the lines as separate features
         # end and start points are deemed separate features simply to avoid changing the measurement model and adapting
@@ -1110,6 +1316,9 @@ class Localization:
         # the content of this variable will be used when calling the correction step
         self.map_features_sorted_out = np.zeros([len(points_seen_x), 3])
         self.map_features_sorted_out[:, 0] = points_seen_x
+        # idx = points_seen_orientation[points_seen_orientation==1]
+        # print("idx:", idx)
+        # print("seen points x,y:", points_seen_x, points_seen_y)
         self.map_features_sorted_out[:, 1] = points_seen_y
         self.map_features_sorted_out[:, 2] = points_seen_orientation
 
@@ -1126,12 +1335,9 @@ class Localization:
             marker.header.stamp = time_stamp
             marker.ns = "map_lines_seen"
             marker.id = point
-            marker.type = np.int(1)  # display marker as cube
+
             marker.action = np.int(0)
             marker.lifetime = rospy.Duration.from_sec(self.dt * 1.11)
-
-            # print("x: ", self.map_features_start_x[point])
-            # print("y: ", self.map_features_start_y[point])
 
             marker.pose.position.x = points_seen_x[point]
             marker.pose.position.y = points_seen_y[point]
@@ -1142,19 +1348,24 @@ class Localization:
             marker.pose.orientation.z = 0.0
             marker.pose.orientation.w = 1.0
 
-            marker.scale.x = 0.2
-            marker.scale.y = 0.2
-            marker.scale.z = 0.2
-            if self.map_features_sorted_out[point, 2] == 2:
+            if self.map_features_sorted_out[point, 2] == -1:
                 marker.color.a = 1.0
                 marker.color.r = 0.7
                 marker.color.g = 0.3
                 marker.color.b = 0.0
+                marker.type = np.int(1)  # display marker as cube
+                marker.scale.x = 0.16
+                marker.scale.y = 0.16
+                marker.scale.z = 0.16
             else:
                 marker.color.a = 1.0
-                marker.color.r = 1.0
+                marker.color.r = 0.0
                 marker.color.g = 1.0
-                marker.color.b = 1.0
+                marker.color.b = 0.0
+                marker.type = np.int(2)  # display marker as sphere
+                marker.scale.x = 0.2
+                marker.scale.y = 0.2
+                marker.scale.z = 0.2
             self.map_features_seen_marker_msg.markers.append(marker)
 
 
@@ -1191,14 +1402,14 @@ class Localization:
                 delta_y = end[1] - start[1]
                 delta_x = end[0] - start[0]
 
-                print("delta y :", delta_y)
-                print("delta x :", delta_x)
+                # print("delta y :", delta_y)
+                # print("delta x :", delta_x)
 
                 if delta_y:
                     orientation = 1
                 else:
-                    orientation = 2
-                print("orientation :", orientation)
+                    orientation = -1
+                # print("orientation :", orientation)
 
                 # save features in desired format
                 # this variable will be fed to the correction step
@@ -1227,55 +1438,15 @@ class Localization:
                 marker.action = np.int(0)
                 marker.lifetime = rospy.Duration.from_sec(self.dt * 1.01)
 
-                # print("x: ", self.map_features_start_x[point])
-                # print("y: ", self.map_features_start_y[point])
-
-                # transform from robot frame to world frame
-                # x = np.multiply(self.laser_features[point, 0] - (pose_x), np.cos(pose_yaw)) - \
-                #     np.multiply(self.laser_features[point, 1] - (pose_y), np.sin(pose_yaw)) + pose_x #+ self.laserFrame[0]
-                #
-                # y = np.multiply(self.laser_features[point, 0] - (pose_x), np.sin(pose_yaw)) + \
-                #     np.multiply(self.laser_features[point, 1] - (pose_y), np.cos(pose_yaw)) + pose_y #+ self.laserFrame[1]
-
-                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0], np.cos(pose_yaw)) - \
-                #     np.multiply(self.laser_features[point, 1], np.sin(pose_yaw)) + pose_x
-                #
-                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0], np.sin(pose_yaw)) + \
-                #     np.multiply(self.laser_features[point, 1], np.cos(pose_yaw)) + pose_y
-
                 x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] - pose_x, np.cos(pose_yaw)) - \
                     np.multiply(self.laser_features[point, 1] + self.laserFrame[1] - pose_y, np.sin(pose_yaw)) + pose_x
 
                 y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] - pose_x, np.sin(pose_yaw)) + \
                     np.multiply(self.laser_features[point, 1] + self.laserFrame[1] - pose_y, np.cos(pose_yaw)) + pose_y
 
-                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.cos(pose_yaw)) - \
-                #     np.multiply(self.laser_features[point, 1] + pose_y, np.sin(pose_yaw)) - pose_x
-                #
-                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.sin(pose_yaw)) + \
-                #     np.multiply(self.laser_features[point, 1] + pose_y, np.cos(pose_yaw)) - pose_y
-
-                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.cos(pose_yaw)) - \
-                #     np.multiply(self.laser_features[point, 1] + pose_y, np.sin(pose_yaw)) + pose_x #- self.laserFrame[0]
-                #
-                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.sin(pose_yaw)) + \
-                #     np.multiply(self.laser_features[point, 1] + pose_y, np.cos(pose_yaw)) + pose_y #+ self.laserFrame[1]
-
-                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.cos(pose_yaw)) - \
-                #     np.multiply(self.laser_features[point, 1] + pose_y, np.sin(pose_yaw)) - pose_x #- self.laserFrame[0]
-                #
-                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] + pose_x, np.sin(pose_yaw)) + \
-                #     np.multiply(self.laser_features[point, 1] + pose_y, np.cos(pose_yaw)) - pose_y #+ self.laserFrame[1]
-
-
-                # x = self.laser_features[point, 0] + self.laserFrame[0]
-                # y = self.laser_features[point, 1]
-
-                # x += self.laserFrame[0]
-
                 marker.pose.position.x = x
                 marker.pose.position.y = y
-                marker.pose.position.z = self.laserFrame[2]
+                marker.pose.position.z = self.laserFrame[2] + 0.15
 
                 marker.pose.orientation.x = 0.0
                 marker.pose.orientation.y = 0.0
@@ -1286,13 +1457,10 @@ class Localization:
                 marker.scale.y = 0.15
                 marker.scale.z = 0.15
 
-
                 marker.color.a = 1.0
                 marker.color.r = 1.0
                 marker.color.g = 0.0
                 marker.color.b = 0.0
-
-
 
                 self.laser_features_marker_msg.markers.append(marker)
 
@@ -1305,9 +1473,7 @@ class Localization:
         """
         # save line list if any line was measured
         if len(data.line_segments) > 0:
-            # print("hello: ", nr_lines)
             self.laser_line_list = data.line_segments
-            # print(type(self.line_list))
 
     def odometryCallback(self, data):
         """
@@ -1325,9 +1491,7 @@ class Localization:
                                                 data.pose.pose.orientation.w],
                                                axes='szyx')[0]
         # extract robot pose
-        self.robot_pose_odom = [data.pose.pose.position.x, data.pose.pose.position.y]
-
-        # self.robot_pose_estimate = np.array([data.pose.pose.position.x, data.pose.pose.position.y, self.robot_yaw]).reshape(3, 1)
+        self.robot_pose_odom = np.array([data.pose.pose.position.x, data.pose.pose.position.y, self.robot_yaw]).reshape(3, 1)
 
     def groundTruthCallback(self, data):
         """
