@@ -167,7 +167,7 @@ class MotionController:
                     self.done_tracking = True
 
         if not self.done_tracking:
-            pass
+
             #TODO: Your code here
 
             ### calculate error ###

@@ -41,13 +41,25 @@
     <node name="LocalizationNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="Localization.py"
 	output="screen" respawn="true"/>
 
+    <!--launch line extraction node-->
 	<node name="LinePublisherNode" pkg="laser_line_extraction" type="line_extraction_node"
 	output="screen" respawn="true"/>
 
+    <!--launch path planning node-->
+<!-- 	<node name="PathPlanningNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="PathPlanning.py" -->
+<!-- 	output="screen" respawn="true"/> -->
+
+    <!--launch controller node-->
+<!-- 	<node name="ControllerNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="controller.py" -->
+<!-- 	output="screen" respawn="true"/> -->
+
+    <!--launch rviz node-->
     <node type="rviz" name="rviz" pkg="rviz" args="-d $(find ias0060_scitos_auclair_bryan_schneider)/data/config/rviz/scitos_localization.rviz" /> -->
 
+    <!--launch map server node-->
     <node type="map_server" name="map_server" pkg="map_server" args="$(find ias0060_scitos_auclair_bryan_schneider)/data/maps/map.yaml" /> -->
 
+    <!--launch tf node-->
     <node pkg="tf2_ros" type="static_transform_publisher" name="link1_broadcaster" args="0 0 0 0 0 0 1 map odom" />
 
 </launch>
