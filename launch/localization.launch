@@ -46,8 +46,8 @@
 	output="screen" respawn="true"/>
 
     <!--launch path planning node-->
-<!-- 	<node name="PathPlanningNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="PathPlanning.py" -->
-<!-- 	output="screen" respawn="true"/> -->
+	<node name="PathPlanningNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="PathPlanning.py"
+	output="screen" respawn="true"/>
 
     <!--launch controller node-->
 <!-- 	<node name="ControllerNode" pkg="ias0060_scitos_auclair_bryan_schneider" type="controller.py" -->

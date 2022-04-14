@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 IAS0060 home assignment "Path Planning 2" Project 1 (SCITOS).
 
@@ -24,6 +26,7 @@ from rospy import Duration
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 # from tf import allFramesAsYAML
 from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, Twist
+from nav_msgs.msg import Path
 from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Header, ColorRGBA
@@ -35,26 +38,27 @@ class RoadMap:
     This class contains all nodes defining the roadmap of a path.
     """
     def __init__(self):
-        self.locations = []
+        self.locations = list()
 
 
-class Path:
+class PathCandidate:
     """
     This class contains all information on a specific path being explored.
     @input: notes - list of nodes if this path is a duplicate of another path, otherwise
             the only element in the list is the starting node.
     @input: orientation - current orientation in the path search
     """
-    def __init__(self, nodes, orientation):
+    def __init__(self, nodes):
 
-        self.current_orientation = orientation
+        # self.current_orientation = orientation
+        self.current_orientation = None
         self.current_location = None
         self.move_along_feature = False
         self.move_around_feature = False
         self.cost = 0
         self.nodes = RoadMap()
         self.nodes.locations.append(nodes)
-        self.current_location = nodes.locations[-1]
+        self.current_location = self.nodes.locations[-1]
 
 
 class PathPlanner:
@@ -66,17 +70,50 @@ class PathPlanner:
     @input: step - length of step size at each iteration.
     @output: an optimized, feasible path.
     """
-    def __init__(self, map_features, target, start, step):
-        self.map_features = map_features
-        self.target = target
-        self.start = start
+    def __init__(self): #, map_features, start, step):
+        # self.map_features = map_features
+        self.map_features = None
+        self.target = None
+        self.start = np.array([0, 0])
         self.d_safe = 0.2
         self.path_list = []
-        self.path_list.append(Path([start]))
-        self.dl = step
+        self.path_list.append(PathCandidate([self.start]))
+        # self.dl = step
+        self.dl = 0.1
         self.target_reached = False
         self.best_roadmap = None
         self.rate = rospy.Rate(0.2)
+
+        ### acquire user-selected goal ###
+        # subscriber
+        self.target_selection_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.targetSelectCallback)
+
+        # publisher
+        self.target_selected_pub = rospy.Publisher("/roadmap/target", Marker)
+        self.target_selected_msg = Marker()
+        self.target_selected_msg.ns = "roadmap_target"
+        self.target_selected_msg.text = "TARGET"
+        self.target_selected_msg.id = 0
+        self.target_selected_msg.type = np.int(9)  # display marker as 3D test
+        self.target_selected_msg.scale.z = 1.0
+        self.target_selected_msg.header = Header()
+        self.target_selected_msg.header.frame_id = "map"
+        self.target_selected_msg.action = np.int(0)
+        self.target_selected_msg.pose.orientation.x = 0.0
+        self.target_selected_msg.pose.orientation.y = 0.0
+        self.target_selected_msg.pose.orientation.z = 0.0
+        self.target_selected_msg.pose.orientation.w = 1.0
+        self.target_selected_msg.color.a = 1.0
+        self.target_selected_msg.color.r = 1.0
+        self.target_selected_msg.color.g = 0.0
+        self.target_selected_msg.color.b = 0.0
+
+        ### publish selected roadmap ###
+        self.roadmap_pub = rospy.Publisher("/roadmap/path", Path, queue_size=1)
+
+        self.roadmap_msg = Path()
+        self.roadmap_msg.header = Header()
+        self.roadmap_msg.header.frame_id = "map"
 
     def pathFinder(self):
         pass
@@ -90,6 +127,55 @@ class PathPlanner:
     def pathOptimizer(self):
         return None
 
+    def pathPublish(self, selectedRoadMap):
+        """
+        Publishes the roadmap selected by the node
+        @param: list of way points that constitute the road map
+        @result: publishes the roadmap as a Path message
+        """
+
+        header_stamp = rospy.get_rostime()
+        self.roadmap_msg.header.stamp = header_stamp
+        print(selectedRoadMap)
+
+        for point in range(len(selectedRoadMap)):
+            next_point = PoseStamped()
+            next_point.header = Header()
+            next_point.header.frame_id = "map"
+            next_point.header.stamp = header_stamp
+
+            next_point.pose.position = Point()
+            next_point.pose.position.x = selectedRoadMap[point][0]
+            next_point.pose.position.y = selectedRoadMap[point][1]
+
+            next_point.pose.orientation = Quaternion()
+            q = quaternion_from_euler(0, 0, 0, 'rzyx')
+            next_point.pose.orientation.x = q[0]
+            next_point.pose.orientation.y = q[1]
+            next_point.pose.orientation.z = q[2]
+            next_point.pose.orientation.w = q[3]
+
+            self.roadmap_msg.poses.append(next_point)
+
+        self.roadmap_pub.publish(self.roadmap_msg)
+
+
+    def targetSelectCallback(self, data):
+        """
+        Handles incoming PoseStamped message containing the target selected by the user
+        @param: incoming PoseStamped message
+        @result: saves the selected target and calls the publisher for visualization in Rviz.
+        """
+        self.target = np.array([data.pose.position.x, data.pose.position.y])
+        print("target acquired :", self.target)
+
+        self.target_selected_msg.pose.position.x = self.target[0]
+        self.target_selected_msg.pose.position.y = self.target[1]
+        self.target_selected_msg.pose.position.z = 0.6
+        self.target_selected_msg.header.stamp = rospy.get_rostime()
+        self.target_selected_pub.publish(self.target_selected_msg)
+
+
     def run(self):
         """
         Main loop of class.
@@ -98,11 +184,20 @@ class PathPlanner:
         """
         while not rospy.is_shutdown():
 
-            while not self.target_reached:
-                self.step()
-                self.rate.sleep()
+            if self.target is not None:
+                # self.step()
+                roadmap = RoadMap()
+                roadmap.locations.append([0, 0])
+                roadmap.locations.append([1.2 * self.target[0], 0.33 * self.target[1]])
+                roadmap.locations.append([0.8 * self.target[0], 0.66 * self.target[1]])
+                roadmap.locations.append(self.target)
 
-            self.best_roadmap = self.pathOptimizer()
+                self.pathPublish(roadmap.locations)
+
+                while not self.target_reached:
+                    self.rate.sleep()
+
+                # self.best_roadmap = self.pathOptimizer()
 
         return self.best_roadmap
 
@@ -113,21 +208,21 @@ class PathPlanner:
         @param: self
         @result: generates one more step in each path.
         """
-        for path in self.path_list:
-            x = path.current_location[0] + self.dl * np.cos(path.current_orientation)
-            y = path.current_location[1] + self.dl * np.sin(path.current_orientation)
+        for path_item in self.path_list:
+            x = path_item.current_location[0] + self.dl * np.cos(path_item.current_orientation)
+            y = path_item.current_location[1] + self.dl * np.sin(path_item.current_orientation)
             dx = np.min(self.map_features[:, 0] - x)
             dy = np.min(self.map_features[:, 1] - y)
 
             if dx > self.d_safe and dy > self.d_safe:
-                path.current_orientation[0] = np.copy(x)
-                path.current_orientation[1] = np.copy(y)
+                path_item.current_orientation[0] = np.copy(x)
+                path_item.current_orientation[1] = np.copy(y)
 
             else:
-                if path.current_location[0] > self.d_safe and \
-                        path.current_location[1] > self.d_safe:
-                    path.nodes.locations.append(path.current_location)
-                    path.cost += 1
+                if path_item.current_location[0] > self.d_safe and \
+                        path_item.current_location[1] > self.d_safe:
+                    path_item.nodes.locations.append(path_item.current_location)
+                    path_item.cost += 1
 
 
 

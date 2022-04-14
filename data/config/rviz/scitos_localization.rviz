@@ -9,12 +9,8 @@ Panels:
         - /Odometry2/Covariance1
         - /RobotModel1/Links1
         - /TF1/Frames1
-        - /MarkerArray1
-        - /MarkerArray3
-        - /Marker3
-        - /Marker3/Status1
-        - /Marker4
-        - /Marker4/Status1
+        - /Marker5
+        - /Path1
       Splitter Ratio: 0.5
     Tree Height: 719
   - Class: rviz/Selection
@@ -294,7 +290,7 @@ Visualization Manager:
       Marker Topic: /visualization_marker_array
       Name: MarkerArray
       Namespaces:
-        map_lines_seen: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -310,7 +306,7 @@ Visualization Manager:
       Marker Topic: /most_likely_marker_array
       Name: MarkerArray
       Namespaces:
-        most_likely_features: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -318,7 +314,7 @@ Visualization Manager:
       Marker Topic: /innovations
       Name: Marker
       Namespaces:
-        innovations: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -326,8 +322,56 @@ Visualization Manager:
       Marker Topic: /pose_updates
       Name: Marker
       Namespaces:
-        pose updates: true
+        {}
       Queue Size: 100
+      Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Class: rviz/Pose
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.30000001192092896
+      Head Radius: 0.10000000149011612
+      Name: Pose
+      Queue Size: 10
+      Shaft Length: 1
+      Shaft Radius: 0.05000000074505806
+      Shape: Arrow
+      Topic: /move_base_simple/goal
+      Unreliable: false
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /roadmap/target
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Queue Size: 10
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic: /roadmap/path
+      Unreliable: false
       Value: true
   Enabled: true
   Global Options:
@@ -373,9 +417,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4897971749305725
+      Pitch: 0.2297973334789276
       Target Frame: base_footprint
-      Yaw: 0.2953941524028778
+      Yaw: 0.9453937411308289
     Saved:
       - Class: rviz/Orbit
         Distance: 1.9268096685409546
