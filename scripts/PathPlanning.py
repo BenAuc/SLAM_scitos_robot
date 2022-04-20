@@ -189,9 +189,9 @@ class PathPlanner:
         @result: runs the step function until the target has been reached.
         """
         ### automatically define target for testing purposes ###
+        # comment out next few lines if the user selects the target
         self.target = np.array([4, 6])
         print("target acquired :", self.target)
-
         self.target_selected_msg.pose.position.x = self.target[0]
         self.target_selected_msg.pose.position.y = self.target[1]
         self.target_selected_msg.pose.position.z = 0.6
@@ -552,7 +552,7 @@ class PathPlanner:
 
 if __name__ == '__main__':
     # initialize node and name it
-    rospy.init_node("LocalizationNode")  
+    rospy.init_node("LocalizationNode")
     try:
         pathPlanner = PathPlanner()
         pathPlanner.run()
