@@ -345,7 +345,7 @@ Visualization Manager:
       Marker Topic: /roadmap/target
       Name: Marker
       Namespaces:
-        {}
+        roadmap_target: true
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -408,7 +408,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 22.570894241333008
+      Distance: 20.979217529296875
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -424,9 +424,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8347973823547363
+      Pitch: 0.22979773581027985
       Target Frame: base_footprint
-      Yaw: 1.1103936433792114
+      Yaw: 1.1653918027877808
     Saved:
       - Class: rviz/Orbit
         Distance: 1.9268096685409546

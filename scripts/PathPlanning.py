@@ -51,15 +51,25 @@ class PathCandidate:
     """
 
     def __init__(self, nodes):
-        self.current_orientation = None
+
+        # flags to indicate whether the path runs along or moves around features
         self.move_along_feature = False
-        self.move_along_id = False
         self.move_around_feature = False
-        self.cost = 0
+
+        # to keep track of features that stood in the way of the path as obstacles
+        self.move_along_id = None
+        self.history_obstacle_id = list()
+        self.feature_is_obstacle_again = False
+
+        # to register all turning points along the path
         self.nodes = RoadMap()
         self.nodes.locations.append(nodes)
+        self.turning_points = RoadMap()
+        self.turning_points.locations.append(nodes)
+
+        # to perform the iteration of the path search on the basis of a pose
         self.current_location = self.nodes.locations[-1]
-        print("current location init at :", self.current_location)
+        self.current_orientation = None
 
 
 class PathPlanner:
@@ -74,13 +84,15 @@ class PathPlanner:
 
     def __init__(self):
         # for debugging purposes
-        self.rate = rospy.Rate(14)
+        self.rate = rospy.Rate(50)
 
         ### path planning parameters
         # step size in searching for a path
-        self.dl = 0.1
+        self.dl = 0.025
         # distance to keep away from features
-        self.d_safe = 0.5
+        self.d_safe = 0.7
+        # distance to travel to move around a feature
+        self.d_around = 1.5
         # starting point
         self.start = np.array([0, 0])
         # list of all paths under investigation
@@ -156,15 +168,6 @@ class PathPlanner:
         self.features_orientation = list()
 
 
-    def cornerHandler(self):
-        """
-        Handles moving away from a corner
-        @param: TBD
-        @result: TBD
-        """
-        pass
-
-
     def duplicatePath(self, path):
         """
         Duplicates an existing path when an obstacle is faced and there are two ways to circumvent it
@@ -190,7 +193,10 @@ class PathPlanner:
         """
         ### automatically define target for testing purposes ###
         # comment out next few lines if the user selects the target
-        self.target = np.array([4, 6])
+        # self.target = np.array([4, 6])
+        # self.target = np.array([-9, 10])
+        # self.target = np.array([8, 12])
+        self.target = np.array([6, 14])
         print("target acquired :", self.target)
         self.target_selected_msg.pose.position.x = self.target[0]
         self.target_selected_msg.pose.position.y = self.target[1]
@@ -209,16 +215,18 @@ class PathPlanner:
                 while not self.target_reached:
                     # perform one search step for each path
                     self.step()
+                    self.target_selected_pub.publish(self.target_selected_msg)
                     # let sleep for debugging purposes to have time to analyze
                     self.rate.sleep()
 
                 # optimize the selected roadmap
-                self.best_roadmap = self.pathOptimizer(self.best_roadmap)
+                # self.best_roadmap = self.pathOptimizer(self.best_roadmap)
 
                 # publish the selected roadmap
                 self.pathPublish(self.best_roadmap)
 
         return
+
 
     def step(self):
         """
@@ -230,71 +238,118 @@ class PathPlanner:
         path_id = 0
         for path_item in self.path_list:
 
-            # if an obstacle has already been encountered, and we're moving along this obstacle
+            ### if an obstacle has already been encountered, and we're moving along this obstacle ###
             if path_item.move_along_feature:
 
                 # check if this obstacle is still in the vicinity
-                self.stillObstacle(path_id, path_item.current_location[0], path_item.current_location[1])
+                if self.stillMovingAlong(path_id, path_item.current_location[0], path_item.current_location[1]):
 
-                # if not register a turning point
-                if not path_item.move_along_feature:
+                    # lower and raise flags
+                    path_item.move_along_feature = False
+                    path_item.move_around_feature = True
+
+                    # change orientation
+                    self.makeTurnAround(path_id, path_item.current_location[0], path_item.current_location[1])
+
+                    # register a turning point
+                    print("register turning point")
+                    path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
 
-            # compute next pose on the path given current orientation
+            ### if we're moving around an obstacle ###
+            if path_item.move_around_feature:
+
+                # check if this obstacle is still in the vicinity
+                if self.stillMovingAround(path_id, path_item.current_location[0], path_item.current_location[1]):
+
+                    # lower flag
+                    path_item.move_around_feature = False
+
+                    # change orientation
+                    self.makeTurnTowardsTarget(path_id, path_item.current_location[0], path_item.current_location[1])
+
+            ### compute next pose on the path given current orientation ###
             x = path_item.current_location[0] + self.dl * np.cos(path_item.current_orientation)
             y = path_item.current_location[1] + self.dl * np.sin(path_item.current_orientation)
 
-            # if no obstacle is faced at the projected pose
-            if not self.anyObstacle(path_id, x, y):
+            ### if the next pose collides with a feature ###
+            feature_id = self.isThereAnObstacle(path_id, x, y)
+            if feature_id is not None:
+                print("****** new obstacle *******")
+                # register id of the feature
+                path_item.move_along_id = feature_id
+                path_item.feature_is_obstacle_again = False
 
-                # register this pose as the current location along the path
+                if not (feature_id in path_item.history_obstacle_id):
+                    print("feature never seen")
+                    path_item.history_obstacle_id.append(feature_id)
+
+                # raise flag if the feature has already been an obstacle
+                else:
+                    print("feature already seen")
+                    path_item.history_obstacle_id.append(feature_id)
+                    path_item.feature_is_obstacle_again = True
+
+                # if we're already moving along an obstacle
+                if path_item.move_along_feature:
+                    # change orientation accordingly
+                    self.cornerHandler(path_id, path_item.current_location[0], path_item.current_location[1])
+
+                else:
+                    # raise flag change orientation accordingly
+                    path_item.move_along_feature = True
+                    self.featureBumpHandler(path_id, feature_id)
+
+                # # recompute next pose on the path
+                # x = path_item.current_location[0] + self.dl * np.cos(path_item.current_orientation)
+                # y = path_item.current_location[1] + self.dl * np.sin(path_item.current_orientation)
+                #
+                # # if no obstacle is faced at the projected pose
+                # if not self.isThereAnObstacle(path_id, x, y):
+                #     print("****** no obstacle after reorienting *******")
+                #     # register a turning point and set current location
+                #     print("register turning point")
+                #     path_item.turning_points.locations.append(path_item.current_location)
+                #     path_item.nodes.locations.append(path_item.current_location)
+                #     path_item.current_location = np.array([x, y])
+
+            # if no obstacle is faced
+            else:
+                # print("****** no new obstacle *******")
+                # register the next pose as the current location
                 path_item.current_location = np.array([x, y])
 
                 # register point for testing purposes
                 path_item.nodes.locations.append(path_item.current_location)
 
-            # if an obstacle is faced
-            else:
-                # move around the obstacle by changing current orientation along the path
-                # eventually the path would need to be duplicated here
-                self.featureBumpHandler(path_id, path_item.move_along_id)
-
-                # recompute next pose on the path
-                x = path_item.current_location[0] + self.dl * np.cos(path_item.current_orientation)
-                y = path_item.current_location[1] + self.dl * np.sin(path_item.current_orientation)
-
-                # if no obstacle is faced at the projected pose
-                if not self.anyObstacle(path_id, x, y):
-
-                    # register a turning point and set current location
-                    path_item.current_location = np.array([x, y])
-                    path_item.nodes.locations.append(path_item.current_location)
-
-                # if an obstacle is faced we're in a corner
-                else:
-                    pass
-                    self.cornerHandler()
-
-            if (len(path_item.nodes.locations)) % 10 == 0:
-                self.pathPublish(path_item.nodes.locations)
-
-            # if target is reached
+            ### if target is reached ###
             if norm((x - self.target[0], y - self.target[1])) < self.dl:
                 print("target reached")
 
                 # register the target coordinates as the last pose along the path
                 self.target_reached = True
-                path_item.nodes.locations.append(self.target)
-                self.best_roadmap = path_item.nodes.locations
+                path_item.turning_points.locations.append(self.target)
+                self.best_roadmap = path_item.turning_points.locations
+
+
+            ### visualization for testing purposes ###
+            # if (len(path_item.nodes.locations)) % 5 == 0:
+            self.pathPublish(path_item.nodes.locations)
 
             path_id += 1
 
-    def stillObstacle(self, path_id, x, y):
+
+    def stillMovingAlong(self, path_id, x, y):
         """
         Checks whether an obstacle is still on the path
         @param: id of the path for the query, (x,y) current pose along the path
-        @result: change of orientation if obstacle no longer there
+        @result: boolean indicating whether the obstacle is still present
         """
+        print("****** checking if still moving along ******")
+
+        # initialization
+        obstacle_cleared = False
+
         # extract id of the obstacle
         feature_id = self.path_list[path_id].move_along_id
 
@@ -306,109 +361,347 @@ class PathPlanner:
                      np.abs(self.features_y[feature_id + 1] - y)])
 
         # for testing purposes
-        print("****** check if still obstacle ******")
-        print("feature id :", self.features_y[self.path_list[path_id].move_along_id])
-        print("dx, dy : ", dx, dy)
+        # print("feature id :", self.features_y[self.path_list[path_id].move_along_id])
+        # print("dx, dy : ", dx, dy)
+        # print("x, y : ", x, y)
+        # print("feature x1, x2 : ", x, y)
 
         # if the feature is along the x-axis and it's been cleared
-        if self.features_orientation[feature_id] == -1 and dx > 1.2 * self.d_safe:
+        if self.features_orientation[feature_id] == -1 and dx > self.d_safe:
 
-            print("****** no more obstacle ******")
-            # mark the path cleared from obstacles
-            self.path_list[path_id].move_along_feature = False
+            if not (np.max([self.features_x[feature_id], self.features_x[feature_id + 1]]) > x > np.min(
+                    [self.features_x[feature_id], self.features_x[feature_id + 1]])):
 
-            # make by default a 90 degrees turn
-            # this will eventually be refined
-            self.path_list[path_id].current_orientation += np.pi / 2
-            print("new orientation :", self.path_list[path_id].current_orientation)
+                obstacle_cleared = True
+                print("feature id :", self.path_list[path_id].move_along_id)
+                print("****** not moving along anymore ******")
+
 
         # if the feature is along the y-axis and it's been cleared
-        if self.features_orientation[feature_id] == 1 and dy > 1.2 * self.d_safe:
+        if self.features_orientation[feature_id] == 1 and dy > self.d_safe:
 
-            print("****** no more obstacle ******")
-            # mark the path cleared from obstacles
-            self.path_list[path_id].move_along_feature = False
+            if not (np.max([self.features_y[feature_id], self.features_y[feature_id + 1]]) > y > np.min(
+                    [self.features_y[feature_id], self.features_y[feature_id + 1]])):
 
-            # make by default a 90 degrees turn
-            # this will eventually be refined
-            self.path_list[path_id].current_orientation += np.pi / 2
-            print("new orientation :", self.path_list[path_id].current_orientation)
+                obstacle_cleared = True
+                print("feature id :", self.features_y[self.path_list[path_id].move_along_id])
+                print("****** not moving along anymore ******")
+
+        return obstacle_cleared
 
 
-    def anyObstacle(self, path_id, x, y):
+    def makeTurnAround(self, path_id, x, y):
         """
-        Checks whether an obstacle is encountered in a given orientation
+        Handles turn around an obstacle
+        @param: id of the path that called the method, (x,y) current pose along the path
+        @result: change of orientation
+        """
+        print(("***** moving around target *****"))
+
+        print("old orientation :", self.path_list[path_id].current_orientation)
+
+        ### new code
+
+        # # fetch orientation of the feature
+        # feature_id = self.path_list[path_id].move_along_id
+        # orientation = self.features_orientation[feature_id]
+        #
+        # print("feature orientation : ", orientation)
+        #
+        # if not self.path_list[path_id].feature_is_obstacle_a      # fetch orientation of the feature
+        feature_id = self.path_list[path_id].move_along_id
+        orientation = self.features_orientation[feature_id]
+
+        print("feature orientation : ", orientation)
+
+        if not self.path_list[path_id].feature_is_obstacle_again:
+            # change orientation based on feature orientation
+            if orientation == 1:
+
+                if self.path_list[path_id].feature_is_obstacle_again:
+
+                    self.path_list[path_id].feature_is_obstacle_again = False
+
+                    if np.pi >= self.path_list[path_id].current_orientation > 0:
+                        self.path_list[path_id].current_orientation = -1 * np.pi / 2
+                    else:
+                        self.path_list[path_id].current_orientation = np.pi / 2
+
+                else:
+                    if np.pi >= self.path_list[path_id].current_orientation > 0:
+                        self.path_list[path_id].current_orientation = np.pi / 2
+                    else:
+                        self.path_list[path_id].current_orientation = -1 * np.pi / 2
+                print("new orientation : ", self.path_list[path_id].current_orientation)
+
+            else:
+
+                if orientation == -1:
+                    if self.path_list[path_id].feature_is_obstacle_again:
+
+                        self.path_list[path_id].feature_is_obstacle_again = False
+                        if np.pi / 2 >= self.path_list[path_id].current_orientation > -1 * np.pi / 2:
+                            self.path_list[path_id].current_orientation = np.pi  # -1 * np.pi
+                        else:
+                            self.path_list[path_id].current_orientation = 0
+                        print("new orientation : ", self.path_list[path_id].current_orientation)
+
+                    else:
+
+                        if np.pi / 2 >= self.path_list[path_id].current_orientation > -1 * np.pi / 2:
+                            self.path_list[path_id].current_orientation = 0  # -1 * np.pi
+                        else:
+                            self.path_list[path_id].current_orientation = np.pi
+                        print("new orientation : ", self.path_list[path_id].current_orientation)
+                else:
+                    print("didn't fit any case *****")
+                    self.path_list[path_id].current_orientation -= np.pi / 2
+                    print("new orientation : ", self.path_list[path_id].current_orientation)
+        else:
+            # if bearing of the target is within -pi/2 and pi/2
+            target_bearing = atan2(self.target[1] - y, self.target[0] - x)
+            print("target bearing : ", target_bearing)
+            if np.abs(self.path_list[path_id].current_orientation - target_bearing) <= np.pi / 2:
+
+                # set new orientation directly to the target
+                self.path_list[path_id].current_orientation = target_bearing
+
+                # if not
+            else:
+                # make a 90 degrees turn towards the target
+                if self.path_list[path_id].feature_is_obstacle_again:
+                    if (self.path_list[path_id].current_orientation - target_bearing) > np.pi / 2:
+                        self.path_list[path_id].current_orientation -= np.pi / 2
+
+                    if (self.path_list[path_id].current_orientation - target_bearing) < -1 * np.pi / 2:
+                        self.path_list[path_id].current_orientation += np.pi / 2
+
+                else:
+                    if (self.path_list[path_id].current_orientation - target_bearing) > np.pi / 2:
+                        self.path_list[path_id].current_orientation += np.pi / 2
+
+                    if (self.path_list[path_id].current_orientation - target_bearing) < -1 * np.pi / 2:
+                        self.path_list[path_id].current_orientation -= np.pi / 2gain:
+        #     # change orientation based on feature orientation
+        #     if orientation == 1:
+        #
+        #         if self.path_list[path_id].feature_is_obstacle_again:
+        #
+        #             self.path_list[path_id].feature_is_obstacle_again = False
+        #
+        #             if np.pi >= self.path_list[path_id].current_orientation > 0:
+        #                 self.path_list[path_id].current_orientation = -1 * np.pi / 2
+        #             else:
+        #                 self.path_list[path_id].current_orientation = np.pi / 2
+        #
+        #         else:
+        #             if np.pi >= self.path_list[path_id].current_orientation > 0:
+        #                 self.path_list[path_id].current_orientation = np.pi / 2
+        #             else:
+        #                 self.path_list[path_id].current_orientation = -1 * np.pi / 2
+        #         print("new orientation : ", self.path_list[path_id].current_orientation)
+        #
+        #     else:
+        #
+        #         if orientation == -1:
+        #             if self.path_list[path_id].feature_is_obstacle_again:
+        #
+        #                 self.path_list[path_id].feature_is_obstacle_again = False
+        #                 if np.pi / 2 >= self.path_list[path_id].current_orientation > -1 * np.pi / 2:
+        #                     self.path_list[path_id].current_orientation = np.pi  # -1 * np.pi
+        #                 else:
+        #                     self.path_list[path_id].current_orientation = 0
+        #                 print("new orientation : ", self.path_list[path_id].current_orientation)
+        #
+        #             else:
+        #
+        #                 if np.pi / 2 >= self.path_list[path_id].current_orientation > -1 * np.pi / 2:
+        #                     self.path_list[path_id].current_orientation = 0  # -1 * np.pi
+        #                 else:
+        #                     self.path_list[path_id].current_orientation = np.pi
+        #                 print("new orientation : ", self.path_list[path_id].current_orientation)
+        #         else:
+        #             print("didn't fit any case *****")
+        #             self.path_list[path_id].current_orientation -= np.pi / 2
+        #             print("new orientation : ", self.path_list[path_id].current_orientation)
+        # else:
+        #     # if bearing of the target is within -pi/2 and pi/2
+        #     target_bearing = atan2(self.target[1] - y, self.target[0] - x)
+        #     print("target bearing : ", target_bearing)
+        #     if np.abs(self.path_list[path_id].current_orientation - target_bearing) <= np.pi / 2:
+        #
+        #         # set new orientation directly to the target
+        #         self.path_list[path_id].current_orientation = target_bearing
+        #
+        #         # if not
+        #     else:
+        #         # make a 90 degrees turn towards the target
+        #         if self.path_list[path_id].feature_is_obstacle_again:
+        #             if (self.path_list[path_id].current_orientation - target_bearing) > np.pi / 2:
+        #                 self.path_list[path_id].current_orientation -= np.pi / 2
+        #
+        #             if (self.path_list[path_id].current_orientation - target_bearing) < -1 * np.pi / 2:
+        #                 self.path_list[path_id].current_orientation += np.pi / 2
+        #
+        #         else:
+        #             if (self.path_list[path_id].current_orientation - target_bearing) > np.pi / 2:
+        #                 self.path_list[path_id].current_orientation += np.pi / 2
+        #
+        #             if (self.path_list[path_id].current_orientation - target_bearing) < -1 * np.pi / 2:
+        #                 self.path_list[path_id].current_orientation -= np.pi / 2
+
+        ### backup
+
+        # if bearing of the target is within -pi/2 and pi/2
+        target_bearing = atan2(self.target[1] - y, self.target[0] - x)
+        print("target bearing : ", target_bearing)
+        if np.abs(self.path_list[path_id].current_orientation - target_bearing) <= np.pi / 2:
+
+            # set new orientation directly to the target
+            self.path_list[path_id].current_orientation = target_bearing
+
+            # if not
+        else:
+            # make a 90 degrees turn towards the target
+            if self.path_list[path_id].feature_is_obstacle_again:
+                if (self.path_list[path_id].current_orientation - target_bearing) > np.pi / 2:
+                    self.path_list[path_id].current_orientation -= np.pi / 2
+
+                if (self.path_list[path_id].current_orientation - target_bearing) < -1 * np.pi / 2:
+                    self.path_list[path_id].current_orientation += np.pi / 2
+
+            else:
+                if (self.path_list[path_id].current_orientation - target_bearing) > np.pi / 2:
+                    self.path_list[path_id].current_orientation += np.pi / 2
+
+                if (self.path_list[path_id].current_orientation - target_bearing) < -1 * np.pi / 2:
+                    self.path_list[path_id].current_orientation -= np.pi / 2
+
+        ### backup
+
+        print("new orientation :", self.path_list[path_id].current_orientation)
+
+
+    def makeTurnTowardsTarget(self, path_id, x, y):
+        """
+        Reorients path towards the target
+        @param: id of the path that called the method, (x,y) current pose along the path
+        @result: change of orientation
+        """
+        print(("***** orienting towards target *****"))
+        print("old orientation :", self.path_list[path_id].current_orientation)
+
+        target_bearing = atan2(self.target[1] - y, self.target[0] - x)
+        self.path_list[path_id].current_orientation = target_bearing
+
+        print("new orientation :", self.path_list[path_id].current_orientation)
+
+
+    def stillMovingAround(self, path_id, x, y):
+        """
+        Checks whether an obstacle is still on the path
         @param: id of the path for the query, (x,y) current pose along the path
-        @result: TBD
+        @result: boolean indicating whether the obstacle is still present
         """
-        # compute how far is each feature from the current pose
+
+        print("**** checking if we moved around the obstacle ****")
+
+        # initialization
+        obstacle_cleared = False
+
+        # extract id of the obstacle
+        feature_id = self.path_list[path_id].move_along_id
+
+        # compute how far away the pose is from the obstacle
+        dx = np.min([np.abs(self.features_x[feature_id] - x),
+                     np.abs(self.features_x[feature_id + 1] - x)])
+
+        dy = np.min([np.abs(self.features_y[feature_id] - y),
+                     np.abs(self.features_y[feature_id + 1] - y)])
+
+        # if we are far away from this obstacle
+        if norm([dy, dx]) > self.d_around:
+            print("**** we moved around the obstacle ****")
+            obstacle_cleared = True
+        else:
+            print("**** we haven't moved around yet ****")
+
+        return obstacle_cleared
+
+
+    def isThereAnObstacle(self, path_id, x, y):
+        """
+        Checks whether a given pose collides with a feature
+        @param: (x,y) next pose along the path
+        @result: returns id of the feature standing as obstacle
+        """
+
+        # compute how far is each feature from the pose
         min_dx = np.abs(self.features_x - x)
         min_dy = np.abs(self.features_y - y)
 
         # initialization
-        feature_id = -1
-        collision = False
+        feature_id = None
 
         # for each feature with respect to the y-axis
         for idx in range(len(min_dy)):
 
-            # if current pose is too close to the feature
+            # if pose is too close to the feature
             if min_dy[idx] < self.d_safe and \
                     (np.max([self.features_x[2*(idx//2)], self.features_x[2*(idx//2) + 1]]) > x > np.min(
                         [self.features_x[2*(idx//2)], self.features_x[2*(idx//2) + 1]])) and \
                     self.features_orientation[2*(idx//2)] == -1:
 
                 # register this feature as current obstacle
+                # print("feature found :", idx)
                 feature_id = idx
                 if (feature_id + 1) % 2 == 0:
                     feature_id -= 1
-                collision = True
                 break
 
-        if not collision:
-            # for each feature with respect to the x-axis
-            for idx in range(len(min_dx)):
+        # if feature_id is None:
+        # for each feature with respect to the x-axis
+        for idx in range(len(min_dx)):
 
-                # if current pose is too close to the feature
-                if min_dx[idx] < self.d_safe and \
-                        (np.max([self.features_y[2*(idx//2)], self.features_y[2*(idx//2) + 1]]) > y > np.min(
-                            [self.features_y[2*(idx//2)], self.features_y[2*(idx//2) + 1]])) and \
-                        self.features_orientation[2*(idx//2)] == 1:
+            # if pose is too close to the feature
+            if min_dx[idx] < self.d_safe and \
+                    (np.max([self.features_y[2*(idx//2)], self.features_y[2*(idx//2) + 1]]) > y > np.min(
+                        [self.features_y[2*(idx//2)], self.features_y[2*(idx//2) + 1]])) and \
+                    self.features_orientation[2*(idx//2)] == 1:
 
-                    # register this feature as current obstacle
-                    feature_id = idx
-                    if (feature_id + 1) % 2 == 0:
-                        feature_id -= 1
-                    collision = True
-                    break
+                # register this feature as current obstacle
+                # print("feature found :", idx)
+                feature_id = idx
+                if (feature_id + 1) % 2 == 0:
+                    feature_id -= 1
+                break
 
-        # if an obstacle is in the vicinity
-        if collision:
+        if feature_id == self.path_list[path_id].move_along_id:
+            feature_id = None
 
-            # register which feature is the obstacle
-            self.path_list[path_id].move_along_feature = True
-            self.path_list[path_id].move_along_id = feature_id
+        # if an obstacle has been observed
+        if feature_id is not None:
 
             ### the rest is for debugging purposes ###
             print("****************** feature bump ******************")
             print("distance in y to feature : ", min_dy[feature_id])
             print("distance in x to feature : ", min_dx[feature_id])
             print("feature id : ", feature_id)
-            print("position x : ", x)
-            print("position y : ", y)
-            print("feature y max : ", np.max([self.features_y[feature_id], self.features_y[feature_id + 1]]))
-            print("feature y min : ", np.min([self.features_y[feature_id], self.features_y[feature_id + 1]]))
-            print("feature x max : ", np.max([self.features_x[feature_id], self.features_x[feature_id + 1]]))
-            print("feature x min : ", np.min([self.features_x[feature_id], self.features_x[feature_id + 1]]))
+            # print("position x : ", x)
+            # print("position y : ", y)
+            # print("feature y max : ", np.max([self.features_y[feature_id], self.features_y[feature_id + 1]]))
+            # print("feature y min : ", np.min([self.features_y[feature_id], self.features_y[feature_id + 1]]))
+            # print("feature x max : ", np.max([self.features_x[feature_id], self.features_x[feature_id + 1]]))
+            # print("feature x min : ", np.min([self.features_x[feature_id], self.features_x[feature_id + 1]]))
 
-            ### visualize the obstacles ###
+            ### visualize the obstacle ###
 
             self.obstacle_msg = Marker()
-            self.obstacle_msg.lifetime = rospy.Duration.from_sec(0.5)
+            self.obstacle_msg.lifetime = rospy.Duration.from_sec(2.9)
             self.obstacle_msg.ns = "obstacles"
             self.obstacle_msg.id = 0
             self.obstacle_msg.type = np.int(5)  # display marker as line list
-            self.obstacle_msg.scale.x = 0.07
+            self.obstacle_msg.scale.x = 0.25
             self.obstacle_msg.header = Header()
             self.obstacle_msg.header.frame_id = "map"
             self.obstacle_msg.header.stamp = rospy.get_rostime()
@@ -417,7 +710,7 @@ class PathPlanner:
             p_start = Point()
             p_start.x = self.features_x[feature_id]
             p_start.y = self.features_y[feature_id]
-            p_start.z = 0.1
+            p_start.z = 0.2
             # print("append : ", p_start)
             self.obstacle_msg.points.append(p_start)
 
@@ -436,25 +729,158 @@ class PathPlanner:
 
             self.obstacle_pub.publish(self.obstacle_msg)
 
-        return collision
+        return feature_id
+
+
+    def cornerHandler(self, path_id, x, y):
+        """
+        Handles moving away from a corner
+        @param: id of the path for the query, id of the feature standing as obstacle
+        @result: change orientation for the path search
+        """
+        print("****** cornerHandler called ******")
+        print("old orientation : ", self.path_list[path_id].current_orientation)
+
+        # fetch ids of the features making the corner
+        across_feature_id = self.path_list[path_id].history_obstacle_id[-1]
+        along_feature_id = self.path_list[path_id].history_obstacle_id[-2]
+
+        # fetch orientations of the features making the corner
+        across_feature_orientation = self.features_orientation[across_feature_id]
+        along_feature_orientation = self.features_orientation[along_feature_id]
+
+        print("feature along, orientation : ", along_feature_orientation)
+        print("feature across, orientation : ", across_feature_orientation)
+
+        if along_feature_orientation == 1:
+            if (x - self.features_x[along_feature_id]) > 0:
+                # if self.path_list[path_id].feature_is_obstacle_again:
+                #     self.path_list[path_id].current_orientation += np.pi / 2
+                # else:
+                if self.path_list[path_id].current_orientation == np.pi / 2:
+                    self.path_list[path_id].current_orientation -= np.pi / 2
+                else:
+                    self.path_list[path_id].current_orientation += np.pi / 2
+            else:
+                # if self.path_list[path_id].feature_is_obstacle_again:
+                #     self.path_list[path_id].current_orientation -= np.pi / 2
+                # else:
+                if self.path_list[path_id].current_orientation == np.pi / 2:
+                    self.path_list[path_id].current_orientation += np.pi / 2
+                else:
+                    self.path_list[path_id].current_orientation -= np.pi / 2
+
+        if along_feature_orientation == -1:
+            if (y - self.features_y[along_feature_id]) > 0:
+                # if self.path_list[path_id].feature_is_obstacle_again:
+                #     self.path_list[path_id].current_orientation -= np.pi / 2
+                # else:
+                if self.path_list[path_id].current_orientation == 0:
+                    self.path_list[path_id].current_orientation += np.pi / 2
+                else:
+                    self.path_list[path_id].current_orientation -= np.pi / 2
+
+            else:
+                # if self.path_list[path_id].feature_is_obstacle_again:
+                #     self.path_list[path_id].current_orientation -= np.pi / 2
+                # else:
+                if self.path_list[path_id].current_orientation == 0:
+                    self.path_list[path_id].current_orientation -= np.pi / 2
+                else:
+                    self.path_list[path_id].current_orientation += np.pi / 2
+
+        print("new orientation : ", self.path_list[path_id].current_orientation)
 
 
     def featureBumpHandler(self, path_id, feature_id):
         """
-        Handles obstacles encountered in a given orientation and plans a path to move around them
-        @param: N/A
-        @result: TBD
+        Handles turns when an obstacle has been encountered
+        @param: id of the path for the query, id of the feature standing as obstacle
+        @result: new value for orientation along a given path
         """
+
         # fetch orientation of the feature
         orientation = self.features_orientation[feature_id]
 
-        # change current orientation along the path based on feature orientation
-        # this will eventually be refined
-        if orientation == 1:
-            self.path_list[path_id].current_orientation = -1 * np.pi / 2
+        print("****** featureBumpHandler called ******")
+        print("old orientation : ", self.path_list[path_id].current_orientation)
+        print("feature orientation : ", orientation)
 
-        if orientation == -1:
-            self.path_list[path_id].current_orientation = 0 #-1 * np.pi
+        # change orientation based on feature orientation
+        if orientation == 1 and not (np.abs(self.path_list[path_id].current_orientation) == np.pi / 2):
+
+            if self.path_list[path_id].feature_is_obstacle_again:
+
+                self.path_list[path_id].feature_is_obstacle_again = False
+
+                if np.pi >= self.path_list[path_id].current_orientation > 0:
+                    self.path_list[path_id].current_orientation = -1 * np.pi / 2
+                else:
+                    self.path_list[path_id].current_orientation = np.pi / 2
+
+            else:
+                if np.pi >= self.path_list[path_id].current_orientation > 0:
+                    self.path_list[path_id].current_orientation = np.pi / 2
+                else:
+                    self.path_list[path_id].current_orientation = -1 * np.pi / 2
+            print("new orientation : ", self.path_list[path_id].current_orientation)
+
+        else:
+
+            if orientation == -1 and not ((np.abs(self.path_list[path_id].current_orientation) == np.pi) or
+                                          (np.abs(self.path_list[path_id].current_orientation) == 0)):
+                if self.path_list[path_id].feature_is_obstacle_again:
+
+                    self.path_list[path_id].feature_is_obstacle_again = False
+                    if np.pi / 2 >= self.path_list[path_id].current_orientation > -1 * np.pi / 2:
+                        self.path_list[path_id].current_orientation = np.pi # -1 * np.pi
+                    else:
+                        self.path_list[path_id].current_orientation = 0
+                    print("new orientation : ", self.path_list[path_id].current_orientation)
+
+                else:
+
+                    if np.pi / 2 >= self.path_list[path_id].current_orientation > -1 * np.pi / 2:
+                        self.path_list[path_id].current_orientation = 0  # -1 * np.pi
+                    else:
+                        self.path_list[path_id].current_orientation = np.pi
+                    print("new orientation : ", self.path_list[path_id].current_orientation)
+            else:
+                print("didn't fit any case *****")
+                self.path_list[path_id].current_orientation -= np.pi / 2
+                print("new orientation : ", self.path_list[path_id].current_orientation)
+
+
+        ### code backup ####
+
+        # # fetch orientation of the feature
+        # orientation = self.features_orientation[feature_id]
+        #
+        # print("****** featureBumpHandler called ******")
+        #
+        # # change current orientation along the path based on feature orientation
+        # # this will eventually be refined
+        # if orientation == 1 and not (np.abs(self.path_list[path_id].current_orientation) == np.pi / 2):
+        #     print("old orientation : ", self.path_list[path_id].current_orientation)
+        #     if np.pi >= self.path_list[path_id].current_orientation > 0:
+        #         self.path_list[path_id].current_orientation = np.pi / 2
+        #     else:
+        #         self.path_list[path_id].current_orientation = -1 * np.pi / 2
+        #     print("new orientation : ", self.path_list[path_id].current_orientation)
+        #     print("feature orientation : ", orientation)
+        # else:
+        #
+        #     if orientation == -1:
+        #         print("old orientation : ", self.path_list[path_id].current_orientation)
+        #         if np.pi / 2 >= self.path_list[path_id].current_orientation > -1 * np.pi / 2:
+        #             self.path_list[path_id].current_orientation = 0 #-1 * np.pi
+        #         else:
+        #             self.path_list[path_id].current_orientation = -1 * np.pi
+        #         print("new orientation : ", self.path_list[path_id].current_orientation)
+        #         print("feature orientation : ", orientation)
+        #     else:
+        #         print("orientation left unchanged")
+
 
 
     def featureMapCallback(self, data):
@@ -504,6 +930,10 @@ class PathPlanner:
 
         # fetch time stamp
         header_stamp = rospy.get_rostime()
+
+        self.roadmap_msg = Path()
+        self.roadmap_msg.header = Header()
+        self.roadmap_msg.header.frame_id = "map"
         self.roadmap_msg.header.stamp = header_stamp
 
         # go through each node in the roadmap
@@ -533,6 +963,7 @@ class PathPlanner:
 
         self.roadmap_pub.publish(self.roadmap_msg)
 
+
     def targetSelectCallback(self, data):
         """
         Handles incoming PoseStamped message containing the target selected by the user
@@ -548,6 +979,7 @@ class PathPlanner:
 
         # publish the target to Rviz
         self.target_selected_pub.publish(self.target_selected_msg)
+        print("target acquired : ", self.target)
 
 
 if __name__ == '__main__':
