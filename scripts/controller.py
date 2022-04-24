@@ -62,19 +62,23 @@ class PIDController:
         # Todo: Your code here
         self.int_error += error
         # print("Current error is : {}".format(self.last_error))
-        print("Cumulative error is : {}".format(self.int_error))
+        # print("Cumulative error is : {}".format(self.int_error))
 
         # PID controller computes command
         # cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, np.absolute(error - self.last_error) / self.dt)
         cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, (
             error - self.last_error) / self.dt)
-        print("Command from PID is : {}".format(cmd))
+        # print("Command from PID is : {}".format(cmd))
 
-        # u
         self.last_error = error
         return cmd
 
     def set_int_error_to_zero(self):
+        """
+        Called after a waypoint has been reached to set the accumulated error to zero
+        @param: self
+        @result: sets the variable self.int_error to zero
+        """
         self.int_error = np.zeros(2)
 
 
@@ -98,10 +102,12 @@ class MotionController:
         self.rate = rospy.Rate(rate)
 
         ### define subscribers ###
-        self.odom_sub = rospy.Subscriber('/controller_diffdrive/odom', Odometry, self.onOdom)
+        # self.odom_sub = rospy.Subscriber('/controller_diffdrive/odom', Odometry, self.onOdom)
+        self.odom_sub = rospy.Subscriber('/odom', Odometry, self.onOdom)
 
         ### define publishers ###
-        self.cmd_vel_pub = rospy.Publisher("/controller_diffdrive/cmd_vel", Twist, queue_size=10)
+        # self.cmd_vel_pub = rospy.Publisher("/controller_diffdrive/cmd_vel", Twist, queue_size=10)
+        self.cmd_vel_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
         self.waypoints_pub = rospy.Publisher(
             "/mission_control/waypoints", MarkerArray, queue_size=10)
 
@@ -111,8 +117,14 @@ class MotionController:
         self.twist_msg = Twist()
 
         ### get parameters ###
-        self.waypoints = rospy.get_param("/mission/waypoints")
-        self.distance_margin = rospy.get_param("/mission/distance_margin")
+        # self.waypoints = rospy.get_param("/mission/waypoints")
+        self.waypoints = None
+        # self.distance_margin = rospy.get_param("/mission/distance_margin")
+        self.distance_margin = 0.15
+
+        ### fetch roadmap ###
+        # subscriber
+        self.waypoints_sub = rospy.Subscriber("/roadmap/turning_points_marker_array", MarkerArray, self.roadmapCallback)
 
         ### initialization of class variables ###
         self.wpIndex = 0    # counter for visited waypoints
@@ -137,10 +149,16 @@ class MotionController:
         @result: runs the step function for motion control update
         """
         while not rospy.is_shutdown():
-            ### run only when odometry data is available and we still
-            # have waypoints to reach ###
-            if self.odom_msg and not self.done_tracking:
-                self.step()
+
+            if self.waypoints is not None:
+                # print("waypoints acquired")
+                # self.waypoints = None
+                ### run only when odometry data is available and we still
+                # have waypoints to reach ###
+                if self.odom_msg and not self.done_tracking:
+                    # print("*** step ***")
+                    self.step()
+
             # regulate motion control update according to desired timing
             self.rate.sleep()
 
@@ -174,17 +192,52 @@ class MotionController:
             distance, angle = self.compute_error()
             error_to_pid = np.array([distance, angle])
 
-            print("Error sent to pid is : {}".format(error_to_pid))
+            # print("Error sent to pid is : {}".format(error_to_pid))
 
             ### call controller class to get controller commands ###
             cmd = self.pid.control(error_to_pid)
             print("Command received from PID : {}".format(cmd))
+
             self.twist_msg.linear.x = cmd[0]
-            self.twist_msg.angular.z = cmd[1]
+            self.twist_msg.angular.z = -1 * cmd[1]
 
             ### publish cmd_vel (and marker array) ###
             self.publish_vel_cmd()
             self.publish_waypoints()
+
+
+    def roadmapCallback(self, data):
+        """
+        Handles incoming MarkerArray message containing the waypoints.
+        @param: self
+        @result: stores the waypoints in the variable self.waypoints
+        """
+
+        if self.waypoints is None:
+            waypoint_list = list()
+
+            # extract list of markers
+            markers_list = np.copy(data.markers)
+
+            # go through each node in the roadmap
+            for idx in range(1, len(markers_list)):
+                waypoint = list()
+
+                x = markers_list[idx].pose.position.x
+                y = markers_list[idx].pose.position.y
+                #
+                # print("x, y :", x, y)
+
+                waypoint.append(x)
+                waypoint.append(y)
+
+                waypoint_list.append(waypoint)
+                # print("waypoint :", waypoint)
+
+            # self.waypoints = np.asarray(waypoint_list)
+            self.waypoints = waypoint_list
+
+            # print("all waypoints :", self.waypoints)
 
 
     def setNextWaypoint(self):
@@ -217,7 +270,9 @@ class MotionController:
         @param: self
         @result: returns True if waypoint is reached, otherwise False
         """
-        if not self.waypoints:
+        # print("waypoints : ", self.waypoints)
+
+        if self.waypoints:
             return False
 
         # TODO: calculate Euclidian (2D) distance to current waypoint
@@ -235,21 +290,25 @@ class MotionController:
         @param: self
         @result: returns the error vector in 2D coordinates as 2x1 vector (euclidian distance, yaw angle)
         """
+        print("Current set waypoint is : {}".format(self.waypoints[0]))
+
         # compute error in 2D coordinates
         position = np.array([self.pose_2D['robot_x'], self.pose_2D['robot_y']])
-        print("Current set waypoint is : {}".format(self.waypoints[0]))
+
         error_vector_2D = np.array(self.waypoints[0]) - position
-        print("error vector in 2D: {}".format(error_vector_2D))
+        # print("error vector in 2D: {}".format(error_vector_2D))
+
         # compute Euclidian distance on the 2D error vector
         error_distance = np.linalg.norm(error_vector_2D)
-        print("Error distance: {}".format(error_distance))
+        # print("Error distance: {}".format(error_distance))
 
         # compute yaw angle of the target waypoint and of the error with respect to this target
         target_theta = np.arctan2(error_vector_2D[1], error_vector_2D[0])
         print("Target theta: {}".format(target_theta))
         print("Current theta: {}".format(self.theta))
+
         error_angle = target_theta - self.theta
-        print("Error theta: {}".format(error_angle))
+        # print("Error theta: {}".format(error_angle))
 
         return error_distance, error_angle
 
@@ -260,7 +319,7 @@ class MotionController:
         @result: publish message
         """
         # TODO: Your code here
-        print("Twist msg being sent: {}".format(self.twist_msg))
+        # print("Twist msg being sent: {}".format(self.twist_msg))
         self.cmd_vel_pub.publish(self.twist_msg)
 
     def onOdom(self, data):
@@ -295,7 +354,7 @@ class MotionController:
         self.marker_array = MarkerArray()
         marker_id = 0
         for waypoint in self.waypoints:
-            print("Publishing waypoint")
+            # print("Publishing waypoint")
             marker = Marker()
             marker.header.frame_id = "odom"
             marker.type = marker.SPHERE

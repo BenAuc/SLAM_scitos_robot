@@ -1000,16 +1000,16 @@ class Localization:
                                                           duplicate])) < threshold)):
                                     #      (self.map_features_length[line] <= self.map_features_length[duplicate] and
                                     # self.map_features_length[line] < 10 * self.map_features_length[duplicate]))):
-                                    print("x-line removed")
-                                    print("line y coordinate: ", self.map_features_start_y[line])
-                                    print("duplicate y coordinate: ", self.map_features_start_y[duplicate])
-                                    print("line start x coordinate: ", self.map_features_start_x[line])
-                                    print("duplicate start x coordinate: ",
-                                          self.map_features_start_x[duplicate])
-                                    print("line end x coordinate: ", self.map_features_end_x[line])
-                                    print("duplicate end x coordinate: ", self.map_features_end_x[duplicate])
-                                    print("line length: ", self.map_features_length[line])
-                                    print("duplicate length: ", self.map_features_length[duplicate])
+                                    # print("x-line removed")
+                                    # print("line y coordinate: ", self.map_features_start_y[line])
+                                    # print("duplicate y coordinate: ", self.map_features_start_y[duplicate])
+                                    # print("line start x coordinate: ", self.map_features_start_x[line])
+                                    # print("duplicate start x coordinate: ",
+                                    # #       self.map_features_start_x[duplicate])
+                                    # print("line end x coordinate: ", self.map_features_end_x[line])
+                                    # print("duplicate end x coordinate: ", self.map_features_end_x[duplicate])
+                                    # print("line length: ", self.map_features_length[line])
+                                    # print("duplicate length: ", self.map_features_length[duplicate])
 
                                     self.map_features_start_y.pop(duplicate)
                                     self.map_features_start_x.pop(duplicate)
@@ -1103,6 +1103,7 @@ class Localization:
 
             ### step only when odometry is available ###
             if self.odom_msg:
+
                 self.step()
 
             # sleep to selected frequency
@@ -1156,7 +1157,7 @@ class Localization:
         self.predicted_state_msg.pose.orientation.w = q[3]
 
         # publish pose estimate message
-        self.pose_pub.publish(self.predicted_state_msg)
+        # self.pose_pub.publish(self.predicted_state_msg)
 
         # publish all features extracted from the map
         self.map_features_marker_msg.header.stamp = rospy.get_rostime()
