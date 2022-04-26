@@ -432,7 +432,7 @@ class PathPlanner:
                 node_id -= counter
                 # print("node_id : ", node_id)
 
-                if node_id + jump >= len(nodes) - 1 - counter:
+                if node_id + jump > len(nodes) - 1 - counter:
                     break
 
                 x1 = nodes[node_id + jump][0]
@@ -517,7 +517,7 @@ class PathPlanner:
                 if dx > safety_factor * self.d_safe:
 
                     obstacle_cleared = True
-                    print("feature id :", self.path_list[path_id].move_along_id)
+                    # print("feature id :", self.path_list[path_id].move_along_id)
                     # print("****** not moving along anymore ******")
 
 
@@ -601,7 +601,7 @@ class PathPlanner:
         @result: change of orientation
         """
         # print(("***** orienting towards target *****"))
-        print("old orientation :", self.path_list[path_id].current_orientation)
+        # print("old orientation :", self.path_list[path_id].current_orientation)
 
         # extract current pose
         x = self.path_list[path_id].current_location[0]
@@ -801,7 +801,7 @@ class PathPlanner:
         @result: change orientation for the path search
         """
         print("****** cornerHandler called ******")
-        print("old orientation : ", self.path_list[path_id].current_orientation)
+        # print("old orientation : ", self.path_list[path_id].current_orientation)
 
         # fetch current position
         x = self.path_list[path_id].current_location[0]
@@ -815,8 +815,8 @@ class PathPlanner:
         across_feature_orientation = self.features_orientation[across_feature_id]
         along_feature_orientation = self.features_orientation[along_feature_id]
 
-        print("feature along, orientation : ", along_feature_orientation)
-        print("feature across, orientation : ", across_feature_orientation)
+        # print("feature along, orientation : ", along_feature_orientation)
+        # print("feature across, orientation : ", across_feature_orientation)
 
         if along_feature_orientation == 1:
 

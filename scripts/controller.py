@@ -45,6 +45,7 @@ class PIDController:
 
         ### get controller gains as (2x1) vectors ###
         self.Kp = np.array(rospy.get_param("controller_diffdrive/gains/p"))
+
         self.Ki = np.array(rospy.get_param("controller_diffdrive/gains/i"))
         self.Kd = np.array(rospy.get_param("controller_diffdrive/gains/d"))
 
@@ -60,15 +61,29 @@ class PIDController:
         @result: cmd - (2x1) vector of controller commands
         """
         # Todo: Your code here
+        # cumulate error
         self.int_error += error
-        # print("Current error is : {}".format(self.last_error))
-        # print("Cumulative error is : {}".format(self.int_error))
 
-        # PID controller computes command
-        # cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, np.absolute(error - self.last_error) / self.dt)
+        # avoid a
+        if self.last_error.all() == 0:
+            self.last_error = error
+
         cmd = np.multiply(self.Kp, error) + np.multiply(self.Ki, self.int_error) + np.multiply(self.Kd, (
             error - self.last_error) / self.dt)
-        # print("Command from PID is : {}".format(cmd))
+
+        ### capping control commands to regulate the behavior ###
+        if np.abs(error[1]) > np.pi / 8:
+            if cmd[0] > 0.4:
+                cmd[0] = 0.4
+
+        # cap on angular velocity
+        if np.abs(error[1]) > np.pi / 10:
+            if cmd[1] > 1.9:
+                cmd[1] = 1.9
+
+        # cap on linear velocity
+        if cmd[0] > 1.5:
+            cmd[0] = 1.5
 
         self.last_error = error
         return cmd
@@ -196,11 +211,12 @@ class MotionController:
 
             ### call controller class to get controller commands ###
             cmd = self.pid.control(error_to_pid)
-            print("Command received from PID : {}".format(cmd))
+            # print("Command received from PID : {}".format(cmd))
 
             self.twist_msg.linear.x = cmd[0]
-            self.twist_msg.angular.z = -1 * cmd[1]
+            self.twist_msg.angular.z = cmd[1]
 
+            # print("velocity commands: ", self.twist_msg)
             ### publish cmd_vel (and marker array) ###
             self.publish_vel_cmd()
             self.publish_waypoints()
@@ -270,15 +286,14 @@ class MotionController:
         @param: self
         @result: returns True if waypoint is reached, otherwise False
         """
+        # print("********** isWaypointReached call **********")
         # print("waypoints : ", self.waypoints)
-
-        if self.waypoints:
-            return False
+        #
+        # if self.waypoints:
+        #     return False
 
         # TODO: calculate Euclidian (2D) distance to current waypoint
         distance, angle = self.compute_error()
-        print(distance)
-        print("Distance from waypoint is : {}".format(distance))
 
         if distance < self.distance_margin:
             return True
@@ -290,12 +305,14 @@ class MotionController:
         @param: self
         @result: returns the error vector in 2D coordinates as 2x1 vector (euclidian distance, yaw angle)
         """
-        print("Current set waypoint is : {}".format(self.waypoints[0]))
+        # print("********* compute error call *********")
+        # print("Current set waypoint is : {}".format(self.waypoints[0]))
 
         # compute error in 2D coordinates
         position = np.array([self.pose_2D['robot_x'], self.pose_2D['robot_y']])
 
         error_vector_2D = np.array(self.waypoints[0]) - position
+        # print("error x,y:", error_vector_2D)
         # print("error vector in 2D: {}".format(error_vector_2D))
 
         # compute Euclidian distance on the 2D error vector
@@ -304,8 +321,8 @@ class MotionController:
 
         # compute yaw angle of the target waypoint and of the error with respect to this target
         target_theta = np.arctan2(error_vector_2D[1], error_vector_2D[0])
-        print("Target theta: {}".format(target_theta))
-        print("Current theta: {}".format(self.theta))
+        # print("Target theta: {}".format(target_theta))
+        # print("Current theta: {}".format(self.theta))
 
         error_angle = target_theta - self.theta
         # print("Error theta: {}".format(error_angle))
