@@ -20,6 +20,9 @@ import math
 import numpy.linalg
 import rospy
 import numpy as np
+from numpy import arctan2 as atan2
+import matplotlib.pyplot as plt
+from numpy.linalg import norm as norm
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float64
@@ -118,7 +121,7 @@ class MotionController:
 
         ### define subscribers ###
         # self.odom_sub = rospy.Subscriber('/controller_diffdrive/odom', Odometry, self.onOdom)
-        self.odom_sub = rospy.Subscriber('/odom', Odometry, self.onOdom)
+        self.odom_sub = rospy.Subscriber('/ground_truth', Odometry, self.onOdom)
 
         ### define publishers ###
         # self.cmd_vel_pub = rospy.Publisher("/controller_diffdrive/cmd_vel", Twist, queue_size=10)
@@ -134,6 +137,8 @@ class MotionController:
         ### get parameters ###
         # self.waypoints = rospy.get_param("/mission/waypoints")
         self.waypoints = None
+        self.current_waypoint = [0, 0]
+        print("previous waypoint :", self.current_waypoint)
         # self.distance_margin = rospy.get_param("/mission/distance_margin")
         self.distance_margin = 0.15
 
@@ -152,10 +157,15 @@ class MotionController:
         self.pose_2D = {'robot_x': 0.0, 'robot_y': 0.0}
         self.theta = 0.0
 
-        # Registering start time of this node for performance tracking
+        # Recording time and robot pose for performance tracking
         self.startTime = 0
         while self.startTime == 0:
             self.startTime = rospy.Time.now().to_sec()
+
+
+        self.currentTime = None
+        self.position_history = {'x': list(), 'y': list(), 'x_planned': list(), 'y_planned': list(), 't': list()}
+
 
     def run(self):
         """
@@ -176,6 +186,8 @@ class MotionController:
 
             # regulate motion control update according to desired timing
             self.rate.sleep()
+
+
 
     def step(self):
         """
@@ -198,10 +210,15 @@ class MotionController:
                     totalTime = endTime - self.startTime
                     rospy.loginfo(f"Elapsed time  [s]: {totalTime}")
                     self.done_tracking = True
+                    # create plots for performance assessment
+                    self.createPlots()
 
         if not self.done_tracking:
 
             #TODO: Your code here
+
+            # record planned and current position
+            self.logPosition()
 
             ### calculate error ###
             distance, angle = self.compute_error()
@@ -220,6 +237,69 @@ class MotionController:
             ### publish cmd_vel (and marker array) ###
             self.publish_vel_cmd()
             self.publish_waypoints()
+
+
+    def createPlots(self):
+        """
+        Create plots of robot's planned and actual position for performance assessment.
+        @param: self
+        @result: saves the plots
+        """
+
+        # fig = plt.figure()
+        # fig.add_axes()
+
+        fig, ax = plt.subplots(4, 1)
+        #fig.subtitle("Comparison between planned and actual position as a function of time")
+
+
+        # ax = fig.add_subplot(111)
+        ax[0].plot(self.position_history['t'], self.position_history['x'], color='green', linewidth=1)
+        ax[0].plot(self.position_history['t'], self.position_history['x_planned'], color='blue', linewidth=1)
+        ax[0].set_title("Planned (blue) and actual (green) x-position as a function of time")
+        ax[0].set(ylabel='x position (m)')
+
+        ax[1].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['x_planned']) - np.asarray(self.position_history['x'])), color='red', linewidth=1)
+        ax[1].set_title("Error in x-position as a function of time")
+        ax[1].set(ylabel='x position (m)')
+        # ax[0].set_ylim(0, 6)
+
+        # ax2 = fig.add_subplot(212)
+        ax[2].plot(self.position_history['t'], self.position_history['y'], color='green', linewidth=1)
+        ax[2].plot(self.position_history['t'], self.position_history['y_planned'], color='blue', linewidth=1)
+        ax[2].set_title("Planned (blue) and actual (green) y-position as a function of time")
+        ax[2].set(ylabel='y position (m)')
+
+        ax[3].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['y_planned']) - np.asarray(self.position_history['y'])), color='red', linewidth=1)
+        ax[3].set_title("Error in y-position as a function of time")
+        ax[3].set(xlabel='time (s)', ylabel='x position (m)')
+        # ax[1].set_ylim(0, 6)
+
+        plt.show()
+
+
+    def logPosition(self):
+        """
+        Records robot position for performance assessment.
+        @param: self
+        @result: stores the waypoints in the variable self.position_history
+        """
+
+        if self.currentTime is not None:
+            theta = atan2(self.waypoints[0][0] - self.current_waypoint[0],
+                          self.waypoints[0][1] - self.current_waypoint[1])
+
+            distance = norm([self.pose_2D['robot_x'] - self.current_waypoint[0],
+                             self.pose_2D['robot_y'] - self.current_waypoint[1]])
+
+            planned_x = distance * np.sin(theta) + self.current_waypoint[0]
+            planned_y = distance * np.cos(theta) + self.current_waypoint[1]
+
+            self.position_history['x'].append(self.pose_2D['robot_x'])
+            self.position_history['x_planned'].append(planned_x)
+            self.position_history['y'].append(self.pose_2D['robot_y'])
+            self.position_history['y_planned'].append(planned_y)
+            self.position_history['t'].append(self.currentTime)
 
 
     def roadmapCallback(self, data):
@@ -265,6 +345,10 @@ class MotionController:
         """
         if not self.waypoints:
             return False
+
+        # save last waypoint for plotting and performance assessment
+        self.current_waypoint = self.waypoints[0]
+        print("previous waypoint :", self.current_waypoint)
 
         self.waypoints.pop(0)
 
@@ -348,11 +432,15 @@ class MotionController:
         @result: global variable pose_2D containing the planar
                  coordinates robot_x, robot_y and the yaw angle theta
         """
+        # record time for performance assessment
+        self.currentTime = rospy.Time.now().to_sec()
+
         # make odometry message globally available for run() condition
         self.odom_msg = data
 
         # TODO: Your code here
         # make 2D pose globally available as np.array
+
         self.pose_2D["robot_x"] = self.odom_msg.pose.pose.position.x
         self.pose_2D["robot_y"] = self.odom_msg.pose.pose.position.y
         euler = euler_from_quaternion([self.odom_msg.pose.pose.orientation.x,

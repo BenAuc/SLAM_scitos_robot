@@ -90,11 +90,11 @@ class PathPlanner:
 
         ### path planning parameters
         # step size in searching for a path
-        self.dl = 0.025
+        self.dl = 0.15
         # distance to keep away from features
-        self.d_safe = 0.9
+        self.d_safe = 1.2
         # distance to travel to move around a feature
-        self.d_around = 2.0
+        self.d_around = 2.7
         # starting point
         self.start = np.array([0, 0])
         # list of all paths under investigation
@@ -130,7 +130,7 @@ class PathPlanner:
         self.target_selection_sub = rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.targetSelectCallback)
 
         # publisher
-        self.target_selected_pub = rospy.Publisher("/roadmap/target", Marker)
+        self.target_selected_pub = rospy.Publisher("/roadmap/target", Marker) #, queue_size=2)
 
         # marker message containing target location
         self.target_selected_msg = Marker()
@@ -182,9 +182,10 @@ class PathPlanner:
     def duplicatePath(self, path):
         """
         Duplicates an existing path when an obstacle is faced and there are two ways to circumvent it
-        @param: the existing path to be duplicated
+        @param: the id of the existing path to be duplicated
         @result: TBD
         """
+        # method not yet implemented
         pass
 
 
@@ -196,19 +197,17 @@ class PathPlanner:
         """
         ### automatically define target for testing purposes ###
         # comment out next few lines if the user selects the target
-        self.target = np.array([4, 6]) # success
+        # self.target = np.array([3, 16.4]) # success * 2
         # self.target = np.array([-9, 10]) # success * 2
-        # self.target = np.array([8, 12]) # trivial
         # self.target = np.array([6, 14]) # success * 2
-        # self.target = np.array([4, 16])
         # self.target = np.array([-3, 16]) # success * 2
-
-        print("target acquired :", self.target)
+        self.target = np.array([3, 16.4])  # success * 2
         self.target_selected_msg.pose.position.x = self.target[0]
         self.target_selected_msg.pose.position.y = self.target[1]
         self.target_selected_msg.pose.position.z = 0.6
         self.target_selected_msg.header.stamp = rospy.get_rostime()
         self.target_selected_pub.publish(self.target_selected_msg)
+        ### comment out previous lines if the user selects the target ###
 
         while not self.target_reached and not rospy.is_shutdown():
 
@@ -223,7 +222,7 @@ class PathPlanner:
                     self.step()
                     self.target_selected_pub.publish(self.target_selected_msg)
                     # let sleep for debugging purposes to have time to analyze
-                    self.rate.sleep()
+                    # self.rate.sleep()
 
                 # optimize the selected roadmap
                 self.best_roadmap = self.pathOptimizer(self.best_roadmap)
@@ -262,10 +261,9 @@ class PathPlanner:
                     self.makeTurnAround(path_id)
 
                     # register a turning point
-                    # print("register turning point")
+                    print("registering turning point")
                     path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
-                    # print("turning points are : ", path_item.turning_points.locations)
 
             ### if we're moving around an obstacle ###
             if path_item.move_around_feature:
@@ -282,10 +280,9 @@ class PathPlanner:
                     self.makeTurnTowardsTarget(path_id)
 
                     # register a turning point
-                    # print("register turning point")
+                    print("registering turning point")
                     path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
-                    # print("turning points are : ", path_item.turning_points.locations)
 
             ### compute next pose on the path given current orientation ###
             x = path_item.current_location[0] + self.dl * np.cos(path_item.current_orientation)
@@ -294,7 +291,7 @@ class PathPlanner:
             ### if the next pose collides with a feature ###
             feature_id = self.isThereAnObstacle(path_id, x, y)
             if feature_id is not None:
-                # print("****** new obstacle *******")
+
                 # register id of the feature
                 path_item.move_along_id = feature_id
 
@@ -302,27 +299,27 @@ class PathPlanner:
                 path_item.feature_is_obstacle_again = False
                 path_item.moving_towards_target = False
 
+                # if this feature hasn't previously been bumped
                 if not (feature_id in path_item.history_obstacle_id):
-                    # print("feature never seen")
+                    # add to the list of obstacles that have been seen
                     path_item.history_obstacle_id.append(feature_id)
 
-                # raise flag if the feature has already been an obstacle
                 else:
-                    # print("feature already seen")
+                    # add to the list of obstacles that have been seen
                     path_item.history_obstacle_id.append(feature_id)
+                    # raise flag if the feature has already been bumped
                     path_item.feature_is_obstacle_again = True
 
-                # if we're already moving along an obstacle
+                # if we're already moving along an obstacle, a corner has been detected
                 if path_item.move_along_feature:
                     # change orientation accordingly
                     path_item.moving_towards_target = False
                     self.cornerHandler(path_id)
 
                     # register a turning point
-                    # print("register turning point")
+                    print("registering turning point")
                     path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
-                    # print("turning points are : ", path_item.turning_points.locations)
 
                 else:
                     # raise flag and change orientation accordingly
@@ -331,155 +328,161 @@ class PathPlanner:
                     self.featureBumpHandler(path_id, feature_id)
 
                     # register a turning point
-                    # print("register turning point")
+                    print("registering turning point")
                     path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
-                    # print("turning points are : ", path_item.turning_points.locations)
 
+            # otherwise no obstacle is on the way
             else:
-                # print("****** no new obstacle *******")
                 # register the next pose as the current location
                 path_item.current_location = np.array([x, y])
-
-                # register point for testing purposes
                 path_item.nodes.locations.append(path_item.current_location)
-                # if self.counter >= 150:
-                #     path_item.nodes.locations.append(path_item.current_location)
-                #     self.counter == 0
+
 
             ### if the target is in sight ###
             # if we're not already moving towards the target
             if not path_item.moving_towards_target:
 
-                # print("checking if we can move towards target")
-                # print("norm : ", norm((x - self.target[0], y - self.target[1])))
-
                 # if we're in the vicinity of the target
                 if norm((x - self.target[0], y - self.target[1])) < 6 * self.d_safe:
+
+                    # if the target is considered in sight
                     if self.isTargetInSight(path_id):
+
                         # raise and lower flags and change orientation accordingly
                         path_item.moving_towards_target = True
                         path_item.move_along_feature = False
                         self.makeTurnTowardsTarget(path_id)
 
                         # register a turning point
-                        # print("register turning point")
+                        print("registering turning point")
                         path_item.turning_points.locations.append(path_item.current_location)
                         path_item.nodes.locations.append(path_item.current_location)
-                        # print("turning points are : ", path_item.turning_points.locations)
 
                 # or if we are not moving around any obstacle
                 else:
                     if not path_item.move_along_feature and not path_item.move_around_feature:
-                            if self.isTargetInSight(path_id):
 
-                                # raise and lower flags and change orientation accordingly
-                                path_item.moving_towards_target = True
-                                path_item.move_along_feature = False
-                                self.makeTurnTowardsTarget(path_id)
+                        # if the target is considered in sight
+                        if self.isTargetInSight(path_id):
 
-                                # register a turning point
-                                # print("register turning point")
-                                path_item.turning_points.locations.append(path_item.current_location)
-                                path_item.nodes.locations.append(path_item.current_location)
-                                # print("turning points are : ", path_item.turning_points.locations)
+                            # raise and lower flags and change orientation accordingly
+                            path_item.moving_towards_target = True
+                            path_item.move_along_feature = False
+                            self.makeTurnTowardsTarget(path_id)
+
+                            # register a turning point
+                            print("registering turning point")
+                            path_item.turning_points.locations.append(path_item.current_location)
+                            path_item.nodes.locations.append(path_item.current_location)
 
             ### if target is reached ###
             if norm((x - self.target[0], y - self.target[1])) < 1.5 * self.dl:
-                print("target reached")
+                print("**********")
+                print("path planning completed")
+                print("**********")
+                # raise flag
+                self.target_reached = True
 
                 # register the target coordinates as the last pose along the path
-                self.target_reached = True
                 path_item.turning_points.locations.append(self.target)
+
                 # self.best_roadmap = path_item.nodes.locations
                 self.best_roadmap = path_item.turning_points.locations
 
             ### visualization for testing purposes ###
             self.pathPublish(path_item.nodes.locations)
 
-            # self.turningPointsPublish(path_item.turning_points.locations, False)
-
+            # counter of path id would be useful if the method pathDuplicate() was implemented
             path_id += 1
 
 
     def pathOptimizer(self, nodes):
         """
         Removes unnecessary nodes from a path that's been deemed feasible
-        @param: set of nodes from the feasible path
-        @result: optimized roadmap
+        @param: set of nodes from a feasible path
+        @result: returns optimized roadmap as a set of nodes
         """
+        print("**********")
+        print("path optimization in progress")
 
-        # go through each path in the list
+        # initialization
         path_id = 0
         iterate_again = True
 
+        # optimize the path as long as the previous iteration has removed some node
         while iterate_again:
+
+            # initiliaze starting point
             x0 = np.copy(nodes[0][0])
             y0 = np.copy(nodes[0][1])
 
+            # initialize current position along the path
             x = np.copy(x0)
             y = np.copy(y0)
 
+            # count number of nodes removed from the roadmap in this iteration
             counter = 0
-            jump = 1
 
-            # print("start point x,y : ", x0, y0)
-            #
-            # print("total number of nodes: ", len(nodes))
-
+            # go through each node in the list
             for node_id in range(1, len(nodes)):
 
+                # initialize the index in case nodes have been removed
                 node_id -= counter
-                # print("node_id : ", node_id)
 
-                if node_id + jump > len(nodes) - 1 - counter:
+                # break the loop is we've gone through each node in the list
+                if node_id + 1 > len(nodes) - 1 - counter:
                     break
 
-                x1 = nodes[node_id + jump][0]
-                y1 = nodes[node_id + jump][1]
-                # print("*** new target point x,y : ", x1, y1)
+                # initialize the target node by skipping one
+                x1 = nodes[node_id + 1][0]
+                y1 = nodes[node_id + 1][1]
 
-                orientation = atan2(y1 - y0, x1 - x0)
+                # compute bearing of next node with respect to starting point
+                bearing = atan2(y1 - y0, x1 - x0)
 
+                # move by increments from the starting point to the following node
                 node_not_reached = True
-
                 while node_not_reached:
 
-                    # self.rate.sleep()
-
                     ### compute next pose on the path given current orientation ###
-                    x = x + self.dl * np.cos(orientation)
-                    y = y + self.dl * np.sin(orientation)
-                    # print("new location : ", x, y)
+                    x = x + self.dl * np.cos(bearing)
+                    y = y + self.dl * np.sin(bearing)
 
                     ### if the next pose collides with a feature ###
                     feature_id = self.isThereAnObstacle(path_id, x, y)
                     if feature_id is not None:
+
+                        # the node can't be skipped
+                        # reinitialize the starting point
                         x0 = np.copy(nodes[node_id][0])
                         y0 = np.copy(nodes[node_id][1])
                         x = np.copy(x0)
                         y = np.copy(y0)
-                        # print("*** obstacle on the way ***")
-                        # print("new start point x,y : ", x0, y0)
                         break
 
                     else:
-                        ### if target is reached ###
+                        ### if the target node is reached ###
                         if norm((x - x1, y - y1)) < 1.5 * self.dl:
 
                             # register the target coordinates as the last pose along the path
                             node_not_reached = False
                             x = np.copy(x0)
                             y = np.copy(y0)
-                            # print("node popping :", nodes[node_id])
-                            for idx in range(jump):
+
+                            # pop the node that can be skipped
+                            for idx in range(1):
                                 if node_id + idx >= len(nodes) - 1 - counter:
                                     break
                                 nodes.pop(node_id + idx)
                                 counter += 1
+
+            # if some nodes have been removed, reiterate once again
             if counter == 0:
                 iterate_again = False
 
+        print("path optimization completed")
+        print("**********")
         return nodes
 
 
@@ -489,8 +492,6 @@ class PathPlanner:
         @param: id of the path for the query, safety factor to measure how far we cleared the obstacle
         @result: boolean indicating whether the obstacle is still present
         """
-        # print("****** checking if still moving along ******")
-
         # initialization
         obstacle_cleared = False
 
@@ -517,9 +518,6 @@ class PathPlanner:
                 if dx > safety_factor * self.d_safe:
 
                     obstacle_cleared = True
-                    # print("feature id :", self.path_list[path_id].move_along_id)
-                    # print("****** not moving along anymore ******")
-
 
         # if the feature is along the y-axis and it's been cleared
         if self.features_orientation[feature_id] == 1:
@@ -529,8 +527,6 @@ class PathPlanner:
 
                 if dy > safety_factor * self.d_safe:
                     obstacle_cleared = True
-                    # print("feature id :", self.features_y[self.path_list[path_id].move_along_id])
-                    # print("****** not moving along anymore ******")
 
         return obstacle_cleared
 
@@ -539,12 +535,8 @@ class PathPlanner:
         """
         Handles turn around an obstacle
         @param: id of the path that called the method
-        @result: change of orientation
+        @result: change of orientation in the search for a path
         """
-        # print(("***** moving around target *****"))
-        #
-        # print("old orientation :", self.path_list[path_id].current_orientation)
-
         # fetch current position
         x = self.path_list[path_id].current_location[0]
         y = self.path_list[path_id].current_location[1]
@@ -591,18 +583,13 @@ class PathPlanner:
                     else:
                         self.path_list[path_id].current_orientation = np.pi / 2
 
-        # print("new orientation :", self.path_list[path_id].current_orientation)
-
 
     def makeTurnTowardsTarget(self, path_id):
         """
         Reorients path towards the target
         @param: id of the path that called the method
-        @result: change of orientation
+        @result: change of orientation in the search for a path
         """
-        # print(("***** orienting towards target *****"))
-        # print("old orientation :", self.path_list[path_id].current_orientation)
-
         # extract current pose
         x = self.path_list[path_id].current_location[0]
         y = self.path_list[path_id].current_location[1]
@@ -613,8 +600,6 @@ class PathPlanner:
 
         # raise flag
         self.path_list[path_id].moving_towards_target = True
-
-        # print("new orientation :", self.path_list[path_id].current_orientation)
 
 
     def isTargetInSight(self, path_id):
@@ -630,6 +615,7 @@ class PathPlanner:
         x = self.path_list[path_id].current_location[0]
         y = self.path_list[path_id].current_location[1]
 
+        # compute target bearing from current pose
         target_bearing = atan2(self.target[1] - y, self.target[0] - x)
 
         # compute how far away the current pose is from the target
@@ -638,14 +624,10 @@ class PathPlanner:
 
         # if we are far away from this obstacle
         if dx < 1.1 * self.dl:
-            # print("**** checking if the target in sight ****")
             target_in_sight = True
-            # self.path_list[path_id].current_orientation = target_bearing
 
         if dy < 1.1 * self.dl:
-            # print("**** checking if the target in sight ****")
             target_in_sight = True
-            # self.path_list[path_id].current_orientation = target_bearing
 
         # if target is indeed in sight
         if target_in_sight:
@@ -658,9 +640,6 @@ class PathPlanner:
 
                 # if there is one the target is not in sight
                 target_in_sight = False
-            else:
-                pass
-                # print("**** moving towards target ****")
 
         return target_in_sight
 
@@ -671,9 +650,6 @@ class PathPlanner:
         @param: id of the path for the query, (x,y) current pose along the path
         @result: boolean indicating whether the obstacle is still present
         """
-
-        # print("**** checking if we moved around the obstacle ****")
-
         # initialization
         obstacle_cleared = False
 
@@ -689,11 +665,7 @@ class PathPlanner:
 
         # if we are far away from this obstacle
         if norm([dy, dx]) > self.d_around:
-            # print("**** we moved around the obstacle ****")
             obstacle_cleared = True
-        else:
-            pass
-            # print("**** we haven't moved around yet ****")
 
         return obstacle_cleared
 
@@ -722,7 +694,6 @@ class PathPlanner:
                     self.features_orientation[2*(idx//2)] == -1:
 
                 # register this feature as current obstacle
-                # print("feature found :", idx)
                 feature_id = idx
                 if (feature_id + 1) % 2 == 0:
                     feature_id -= 1
@@ -751,11 +722,6 @@ class PathPlanner:
         if feature_id is not None:
 
             ### the rest is for debugging purposes ###
-            # print("****************** feature bump ******************")
-            # print("distance in y to feature : ", min_dy[feature_id])
-            # print("distance in x to feature : ", min_dx[feature_id])
-            # print("feature id : ", feature_id)
-
             ### visualize the obstacle ###
 
             self.obstacle_msg = Marker()
@@ -800,9 +766,6 @@ class PathPlanner:
         @param: id of the path for the query, id of the feature standing as obstacle
         @result: change orientation for the path search
         """
-        print("****** cornerHandler called ******")
-        # print("old orientation : ", self.path_list[path_id].current_orientation)
-
         # fetch current position
         x = self.path_list[path_id].current_location[0]
         y = self.path_list[path_id].current_location[1]
@@ -815,9 +778,6 @@ class PathPlanner:
         across_feature_orientation = self.features_orientation[across_feature_id]
         along_feature_orientation = self.features_orientation[along_feature_id]
 
-        # print("feature along, orientation : ", along_feature_orientation)
-        # print("feature across, orientation : ", across_feature_orientation)
-
         if along_feature_orientation == 1:
 
             # make sure we're still moving along a feature using a safety factor
@@ -826,24 +786,13 @@ class PathPlanner:
                 # check on which side of the feature and in which direction we're moving along
                 if (x > self.features_x[along_feature_id]):
                     self.path_list[path_id].current_orientation = 0
-                    # if self.path_list[path_id].current_orientation == np.pi / 2:
-                    #     # self.path_list[path_id].current_orientation -= np.pi / 2
-                    #     self.path_list[path_id].current_orientation = 0
-                    # else:
-                    #     # self.path_list[path_id].current_orientation += np.pi / 2
-                    #     self.path_list[path_id].current_orientation = np.pi
 
                 # if we're on the other side of the feature
                 else:
                     self.path_list[path_id].current_orientation = np.pi
-                    # if self.path_list[path_id].current_orientation == np.pi / 2:
-                    #     self.path_list[path_id].current_orientation = np.pi
-                    # else:
-                    #     self.path_list[path_id].current_orientation = 0
 
             # if we passed the feature this is not a corner
             else:
-                # print("* not a real corner *")
                 # call routine that handles feature bumps instead
                 self.featureBumpHandler(path_id, across_feature_id)
 
@@ -855,31 +804,13 @@ class PathPlanner:
                 if (y > self.features_y[along_feature_id]):
                     self.path_list[path_id].current_orientation = np.pi / 2
 
-                    # if self.path_list[path_id].current_orientation == 0:
-                    #     self.path_list[path_id].current_orientation += np.pi / 2
-                    # else:
-                    #     self.path_list[path_id].current_orientation -= np.pi / 2
-
                 else:
                     self.path_list[path_id].current_orientation = -np.pi / 2
-                    # if self.path_list[path_id].current_orientation == 0:
-                    #     self.path_list[path_id].current_orientation -= np.pi / 2
-                    # else:
-                    #     self.path_list[path_id].current_orientation += np.pi / 2
             else:
-                # print("* not a real corner *")
                 self.featureBumpHandler(path_id, across_feature_id)
 
         # set the feature we ran into as the new feature we're moving along
         self.path_list[path_id].move_along_id = across_feature_id
-
-        # if self.path_list[path_id].current_orientation > np.pi:
-        #     self.path_list[path_id].current_orientation -= np.pi
-        #
-        # if self.path_list[path_id].current_orientation < -1 * np.pi:
-        #     self.path_list[path_id].current_orientation += np.pi
-
-        # print("new orientation : ", self.path_list[path_id].current_orientation)
 
 
     def featureBumpHandler(self, path_id, feature_id):
@@ -892,14 +823,10 @@ class PathPlanner:
         # fetch orientation of the feature
         orientation = self.features_orientation[feature_id]
 
+        # extract pose and bearing of target
         x = self.path_list[path_id].current_location[0]
         y = self.path_list[path_id].current_location[1]
-
         target_bearing = atan2(self.target[1] - y, self.target[0] - x)
-
-        # print("****** featureBumpHandler called ******")
-        # print("old orientation : ", self.path_list[path_id].current_orientation)
-        # print("feature orientation : ", orientation)
 
         # change orientation based on feature orientation
         if orientation == 1 and not (np.abs(self.path_list[path_id].current_orientation) == np.pi / 2):
@@ -911,15 +838,13 @@ class PathPlanner:
                 self.path_list[path_id].feature_is_obstacle_again = False
                 self.path_list[path_id].moving_in_circles = True
 
-                # if np.pi >= self.path_list[path_id].current_orientation - target_bearing >= 0:
+                # is the target lies ahead
                 if np.abs(self.path_list[path_id].current_orientation - target_bearing) <= np.pi / 2:
-                    # if (x - self.features_x[feature_id]) > 0:
                     if np.abs(self.path_list[path_id].current_orientation - np.pi / 2) <= np.pi / 2:
                         self.path_list[path_id].current_orientation = -1 * np.pi / 2
                     else:
                         self.path_list[path_id].current_orientation = np.pi / 2
                 else:
-                    # if (x - self.features_x[feature_id]) > 0:
                     if np.abs(self.path_list[path_id].current_orientation - np.pi / 2) <= np.pi / 2:
                         self.path_list[path_id].current_orientation = np.pi / 2
                     else:
@@ -927,7 +852,6 @@ class PathPlanner:
 
             else:
 
-                # if np.pi >= self.path_list[path_id].current_orientation - target_bearing >= 0:
                 if np.abs(self.path_list[path_id].current_orientation - target_bearing) <= np.pi / 2:
                     # if (x - self.features_x[feature_id]) > 0:
                     if np.abs(self.path_list[path_id].current_orientation - np.pi / 2) <= np.pi / 2:
@@ -935,13 +859,11 @@ class PathPlanner:
                     else:
                         self.path_list[path_id].current_orientation = -1 * np.pi / 2
                 else:
-                    # if (x - self.features_x[feature_id]) > 0:
                     if np.abs(self.path_list[path_id].current_orientation - np.pi / 2) <= np.pi / 2:
                         self.path_list[path_id].current_orientation = -1 * np.pi / 2
                     else:
                         self.path_list[path_id].current_orientation = np.pi / 2
 
-            # print("new orientation : ", self.path_list[path_id].current_orientation)
 
         # do the same in the feature is in the other direction
         else:
@@ -988,13 +910,9 @@ class PathPlanner:
                         else:
                             self.path_list[path_id].current_orientation = 0
 
-                # print("new orientation : ", self.path_list[path_id].current_orientation)
-
             # in case we're stuck and match no case make a 90 degrees turn
             else:
-                print("didn't fit any case *****")
                 self.path_list[path_id].current_orientation -= np.pi / 2
-                print("new orientation : ", self.path_list[path_id].current_orientation)
 
 
     def featureMapCallback(self, data):
@@ -1002,7 +920,7 @@ class PathPlanner:
         Handles incoming Marker message containing the feature map published by the localization node saves the features
         as lists of coordinates and orientations.
         @param: incoming Marker message
-        @result: self.features_x, self.features_y, self.features_orientation
+        @result: saves the map features
         """
 
         # fetch feature map only once that is if variable is still None
@@ -1073,8 +991,6 @@ class PathPlanner:
             next_point.pose.orientation.z = q[2]
             next_point.pose.orientation.w = q[3]
 
-            # print("point in path # ", point, " x,y :", selectedRoadMap[point][0], selectedRoadMap[point][1])
-
             # add this node to the Path message
             self.roadmap_msg.poses.append(next_point)
 
@@ -1084,6 +1000,7 @@ class PathPlanner:
         """
         Publishes all nodes in the roadmap as markers
         @param: selectedRoadMap - list of turning points that constitute the road map
+        @param: duration_unlimited - whether the visualization should fade out
         @result: publishes the turning points as a Marker message
         """
 
@@ -1097,19 +1014,16 @@ class PathPlanner:
         for point in range(len(selectedRoadMap)):
 
             # individual markers
-
             marker = Marker()
             if duration_unlimited:
                 # marker.lifetime = rospy.Duration.from_sec(2.9)
                 pass
             else:
                 marker.lifetime = rospy.Duration.from_sec(2.2)
+
             marker.ns = "turning_points"
             marker.id = point
             marker.type = np.int(2)  # display marker as spheres
-            # marker.scale.x = 0.15
-            # marker.scale.y = 0.15
-            # marker.scale.z = 0.15
             marker.header = Header()
             marker.header.frame_id = "map"
             marker.header.stamp = header_stamp
@@ -1158,7 +1072,7 @@ class PathPlanner:
 
 if __name__ == '__main__':
     # initialize node and name it
-    rospy.init_node("LocalizationNode")
+    rospy.init_node("PathPlanning")
     try:
         pathPlanner = PathPlanner()
         pathPlanner.run()
