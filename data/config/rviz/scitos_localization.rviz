@@ -269,13 +269,13 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Class: rviz/Marker
-      Enabled: true
+      Enabled: false
       Marker Topic: /line_markers
       Name: Marker
       Namespaces:
-        line_extraction: true
+        {}
       Queue Size: 100
-      Value: true
+      Value: false
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /map_features
@@ -297,7 +297,7 @@ Visualization Manager:
       Marker Topic: /laser_marker_array
       Name: MarkerArray
       Namespaces:
-        laser_features: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -388,6 +388,14 @@ Visualization Manager:
         turning_points: true
       Queue Size: 100
       Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /roadmap/roadmap_marker_array
+      Name: MarkerArray
+      Namespaces:
+        turning_points: true
+      Queue Size: 100
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -416,7 +424,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 13.961153984069824
+      Distance: 22.23819351196289
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -424,17 +432,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -2.0342917442321777
-        Y: 1.2835745811462402
-        Z: 0.00013017654418945312
+        X: -0.29439663887023926
+        Y: 11.616538047790527
+        Z: 0.0013065338134765625
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.32233133912086487
+      Pitch: 0.36539125442504883
       Target Frame: base_footprint
-      Yaw: 1.1046262979507446
+      Yaw: 2.660224199295044
     Saved:
       - Class: rviz/Orbit
         Distance: 1.9268096685409546

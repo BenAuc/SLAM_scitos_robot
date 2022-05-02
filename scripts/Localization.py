@@ -1167,7 +1167,7 @@ class Localization:
         self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
 
         # publish the features extracted from the laser readings based on estimated robot pose
-        self.laser_features_pub.publish(self.laser_features_marker_msg)
+        # self.laser_features_pub.publish(self.laser_features_marker_msg)
 
     def mapFeatureSelection(self):
         """

@@ -67,6 +67,8 @@ class PIDController:
         # cumulate error
         self.int_error += error
 
+        # print("current error: ", error)
+
         # avoid a
         if self.last_error.all() == 0:
             self.last_error = error
@@ -83,12 +85,15 @@ class PIDController:
         if np.abs(error[1]) > np.pi / 10:
             if cmd[1] > 1.9:
                 cmd[1] = 1.9
+            if cmd[1] < -1.9:
+                cmd[1] = -1.9
 
         # cap on linear velocity
         if cmd[0] > 1.5:
             cmd[0] = 1.5
 
         self.last_error = error
+        # print("commands :", cmd)
         return cmd
 
     def set_int_error_to_zero(self):
@@ -138,7 +143,7 @@ class MotionController:
         # self.waypoints = rospy.get_param("/mission/waypoints")
         self.waypoints = None
         self.current_waypoint = [0, 0]
-        print("previous waypoint :", self.current_waypoint)
+        # print("previous waypoint :", self.current_waypoint)
         # self.distance_margin = rospy.get_param("/mission/distance_margin")
         self.distance_margin = 0.15
 
@@ -223,6 +228,14 @@ class MotionController:
             ### calculate error ###
             distance, angle = self.compute_error()
             error_to_pid = np.array([distance, angle])
+            if error_to_pid[1] > np.pi:
+                error_to_pid[1] -= 2 * np.pi
+                # print("corrected theta :", error_to_pid[1])
+
+            if error_to_pid[1] < -np.pi:
+                error_to_pid[1] += 2 * np.pi
+                # print("corrected theta :", error_to_pid[1])
+
 
             # print("Error sent to pid is : {}".format(error_to_pid))
 
@@ -248,32 +261,41 @@ class MotionController:
 
         # fig = plt.figure()
         # fig.add_axes()
+        font_size = 24
 
-        fig, ax = plt.subplots(4, 1)
+        fig, ax = plt.subplots(2, 1)
         #fig.subtitle("Comparison between planned and actual position as a function of time")
 
 
         # ax = fig.add_subplot(111)
         ax[0].plot(self.position_history['t'], self.position_history['x'], color='green', linewidth=1)
         ax[0].plot(self.position_history['t'], self.position_history['x_planned'], color='blue', linewidth=1)
-        ax[0].set_title("Planned (blue) and actual (green) x-position as a function of time")
-        ax[0].set(ylabel='x position (m)')
+        ax[0].set_title("Planned (blue) and actual (green) x-position as a function of time", fontsize=font_size)
+        ax[0].set_ylabel('x position (m)', fontsize=font_size)
 
         ax[1].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['x_planned']) - np.asarray(self.position_history['x'])), color='red', linewidth=1)
-        ax[1].set_title("Error in x-position as a function of time")
-        ax[1].set(ylabel='x position (m)')
+        ax[1].set_title("Error in x-position as a function of time (m)", fontsize=font_size)
+        ax[1].set_ylabel('error (m)', fontsize=font_size)
+        ax[1].set_xlabel('time (s)', fontsize=font_size)
+        # ax[1].set(xlabel='time (s)', ylabel='error (m)', fontsize=20)
         # ax[0].set_ylim(0, 6)
 
-        # ax2 = fig.add_subplot(212)
-        ax[2].plot(self.position_history['t'], self.position_history['y'], color='green', linewidth=1)
-        ax[2].plot(self.position_history['t'], self.position_history['y_planned'], color='blue', linewidth=1)
-        ax[2].set_title("Planned (blue) and actual (green) y-position as a function of time")
-        ax[2].set(ylabel='y position (m)')
+        plt.show()
 
-        ax[3].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['y_planned']) - np.asarray(self.position_history['y'])), color='red', linewidth=1)
-        ax[3].set_title("Error in y-position as a function of time")
-        ax[3].set(xlabel='time (s)', ylabel='x position (m)')
-        # ax[1].set_ylim(0, 6)
+        fig, ax = plt.subplots(2, 1)
+
+        # ax2 = fig.add_subplot(212)
+        ax[0].plot(self.position_history['t'], self.position_history['y'], color='green', linewidth=1)
+        ax[0].plot(self.position_history['t'], self.position_history['y_planned'], color='blue', linewidth=1)
+        ax[0].set_title("Planned (blue) and actual (green) y-position as a function of time", fontsize=font_size)
+        ax[0].set_ylabel('y position (m)', fontsize=font_size)
+        # ax[0].set(ylabel='y position (m)', fontsize=20)
+
+        ax[1].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['y_planned']) - np.asarray(self.position_history['y'])), color='red', linewidth=1)
+        ax[1].set_title("Error in y-position as a function of time (m)", fontsize=font_size)
+        ax[1].set_ylabel('error (m)', fontsize=font_size)
+        ax[1].set_xlabel('time (s)', fontsize=font_size)
+        # ax[1].set(xlabel='time (s)', ylabel='error (m)', fontsize=20)
 
         plt.show()
 
@@ -348,7 +370,7 @@ class MotionController:
 
         # save last waypoint for plotting and performance assessment
         self.current_waypoint = self.waypoints[0]
-        print("previous waypoint :", self.current_waypoint)
+        # print("previous waypoint :", self.current_waypoint)
 
         self.waypoints.pop(0)
 

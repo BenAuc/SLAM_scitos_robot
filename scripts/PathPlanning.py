@@ -86,7 +86,7 @@ class PathPlanner:
 
     def __init__(self):
         # for debugging purposes
-        self.rate = rospy.Rate(2550)
+        self.rate = rospy.Rate(26)
 
         ### path planning parameters
         # step size in searching for a path
@@ -151,7 +151,7 @@ class PathPlanner:
         self.target_selected_msg.color.g = 0.0
         self.target_selected_msg.color.b = 1.0
 
-        ### publish selected roadmap ###
+        ### publish path as it is computed ###
         self.roadmap_pub = rospy.Publisher("/roadmap/path", Path, queue_size=10)
 
         # path message containing roadmap
@@ -159,12 +159,16 @@ class PathPlanner:
         self.roadmap_msg.header = Header()
         self.roadmap_msg.header.frame_id = "map"
 
-        ### publish individual turning points along the path ###
+        ### publish individual turning points along the path as it is computed ###
         # publisher
         self.turns_pub = rospy.Publisher("/roadmap/turning_points_marker_array", MarkerArray, queue_size=1)
 
         # marker array message
         self.turns_msg = MarkerArray()
+
+        ### publish final roadmap as marker array ###
+        # publisher
+        self.roadmap_turns_pub = rospy.Publisher("/roadmap/roadmap_marker_array", MarkerArray, queue_size=1)
 
         ### fetch feature map ###
         # subscriber
@@ -177,6 +181,7 @@ class PathPlanner:
         self.features_orientation = list()
 
         self.counter = 0
+        self.counter_nodes = 0
 
 
     def duplicatePath(self, path):
@@ -201,7 +206,7 @@ class PathPlanner:
         # self.target = np.array([-9, 10]) # success * 2
         # self.target = np.array([6, 14]) # success * 2
         # self.target = np.array([-3, 16]) # success * 2
-        self.target = np.array([3, 16.4])  # success * 2
+        self.target = np.array([-7, 12.4])  # success * 2
         self.target_selected_msg.pose.position.x = self.target[0]
         self.target_selected_msg.pose.position.y = self.target[1]
         self.target_selected_msg.pose.position.z = 0.6
@@ -226,6 +231,7 @@ class PathPlanner:
 
                 # optimize the selected roadmap
                 self.best_roadmap = self.pathOptimizer(self.best_roadmap)
+                print("list of waypoints after optimization: ", self.best_roadmap)
 
                 # publish the selected roadmap
                 self.pathPublish(self.best_roadmap)
@@ -337,6 +343,11 @@ class PathPlanner:
                 # register the next pose as the current location
                 path_item.current_location = np.array([x, y])
                 path_item.nodes.locations.append(path_item.current_location)
+                # self.counter_nodes += 1
+                # if self.counter_nodes >= 2:
+                #     path_item.turning_points.locations.append(path_item.current_location)
+                #     self.counter_nodes = 0
+
 
 
             ### if the target is in sight ###
@@ -389,9 +400,11 @@ class PathPlanner:
 
                 # self.best_roadmap = path_item.nodes.locations
                 self.best_roadmap = path_item.turning_points.locations
+                print("list of waypoints before optimization: ", self.best_roadmap)
 
             ### visualization for testing purposes ###
             self.pathPublish(path_item.nodes.locations)
+            self.turningPointsPublish(np.copy(path_item.turning_points.locations), False)
 
             # counter of path id would be useful if the method pathDuplicate() was implemented
             path_id += 1
@@ -953,11 +966,11 @@ class PathPlanner:
                         self.features_orientation.append(-1)
 
 
-    def pathPublish(self, selectedRoadMap):
+    def pathPublish(self, steps):
         """
         Publishes the roadmap selected by the node
-        @param: selectedRoadMap - list of way points that constitute the road map
-        @result: publishes the roadmap as a Path message
+        @param: steps - list of points that defines the entire path at each step along the way
+        @result: publishes the points a Path message
         """
 
         # fetch time stamp
@@ -971,7 +984,7 @@ class PathPlanner:
         self.roadmap_msg.header.stamp = header_stamp
 
         # go through each node in the roadmap
-        for point in range(len(selectedRoadMap)):
+        for point in range(len(steps)):
 
             ### Path message
             next_point = PoseStamped()
@@ -980,8 +993,8 @@ class PathPlanner:
             next_point.header.stamp = header_stamp
 
             next_point.pose.position = Point()
-            next_point.pose.position.x = selectedRoadMap[point][0]
-            next_point.pose.position.y = selectedRoadMap[point][1]
+            next_point.pose.position.x = steps[point][0]
+            next_point.pose.position.y = steps[point][1]
             next_point.pose.position.z = 0.0
 
             next_point.pose.orientation = Quaternion()
@@ -996,11 +1009,11 @@ class PathPlanner:
 
         self.roadmap_pub.publish(self.roadmap_msg)
 
-    def turningPointsPublish(self, selectedRoadMap, duration_unlimited):
+    def turningPointsPublish(self, turningPoints, final):
         """
-        Publishes all nodes in the roadmap as markers
-        @param: selectedRoadMap - list of turning points that constitute the road map
-        @param: duration_unlimited - whether the visualization should fade out
+        Publishes all nodes in a roadmap as markers
+        @param: turningPoints - list of turning points that constitute the road map
+        @param: final - whether we are published the final roadmap
         @result: publishes the turning points as a Marker message
         """
 
@@ -1011,15 +1024,16 @@ class PathPlanner:
         self.turns_msg.markers = []
 
         # go through each node in the roadmap
-        for point in range(len(selectedRoadMap)):
+        for point in range(len(turningPoints)):
 
             # individual markers
             marker = Marker()
-            if duration_unlimited:
+
+            if final:
                 # marker.lifetime = rospy.Duration.from_sec(2.9)
                 pass
             else:
-                marker.lifetime = rospy.Duration.from_sec(2.2)
+                marker.lifetime = rospy.Duration.from_sec(0.4)
 
             marker.ns = "turning_points"
             marker.id = point
@@ -1029,8 +1043,8 @@ class PathPlanner:
             marker.header.stamp = header_stamp
 
             # marker coordinates
-            marker.pose.position.x = selectedRoadMap[point][0]
-            marker.pose.position.y = selectedRoadMap[point][1]
+            marker.pose.position.x = turningPoints[point][0]
+            marker.pose.position.y = turningPoints[point][1]
             marker.pose.position.z = 0.2
 
             marker.pose.orientation.x = 0.0
@@ -1049,7 +1063,12 @@ class PathPlanner:
 
             self.turns_msg.markers.append(marker)
 
-        self.turns_pub.publish(self.turns_msg)
+        if final:
+            self.turns_pub.publish(self.turns_msg)
+
+        else:
+            self.roadmap_turns_pub.publish(self.turns_msg)
+
 
 
     def targetSelectCallback(self, data):
