@@ -1129,20 +1129,20 @@ class Localization:
         # select which among all map features can be seen by the robot based on predicted pose
         # this simply takes a subset of all features the map contains
 
-        # if self.counter > 30:
-        #     # if any feature has been extracted from the range finder readings
-        #     if (self.laser_features is not None):
-        #         # perform correction if robot is not moving too much
-        #         if self.control_input[1, 0] < 0.18 and self.control_input[0, 0] < 0.45:
-        #             self.mapFeatureSelection()
-        #             # print("shape measurements: ", np.shape(self.laser_features))
-        #             # perform correction step on the predicted state
-        #             pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-        #             self.robot_pose_estimate = pose
-        #             # print("corrected pose :", pose)
-        #     self.counter = 0
-        # else:
-        #     self.counter += 1
+        if self.counter > 30:
+            # if any feature has been extracted from the range finder readings
+            if (self.laser_features is not None):
+                # perform correction if robot is not moving too much
+                if self.control_input[1, 0] < 0.18 and self.control_input[0, 0] < 0.45:
+                    self.mapFeatureSelection()
+                    # print("shape measurements: ", np.shape(self.laser_features))
+                    # perform correction step on the predicted state
+                    pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+                    self.robot_pose_estimate = pose
+                    # print("corrected pose :", pose)
+            self.counter = 0
+        else:
+            self.counter += 1
 
         # print("predicted pose :", self.robot_pose_estimate)
 
@@ -1157,7 +1157,7 @@ class Localization:
         self.predicted_state_msg.pose.orientation.w = q[3]
 
         # publish pose estimate message
-        # self.pose_pub.publish(self.predicted_state_msg)
+        self.pose_pub.publish(self.predicted_state_msg)
 
         # publish all features extracted from the map
         self.map_features_marker_msg.header.stamp = rospy.get_rostime()
@@ -1167,7 +1167,7 @@ class Localization:
         self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
 
         # publish the features extracted from the laser readings based on estimated robot pose
-        # self.laser_features_pub.publish(self.laser_features_marker_msg)
+        self.laser_features_pub.publish(self.laser_features_marker_msg)
 
     def mapFeatureSelection(self):
         """
@@ -1522,17 +1522,47 @@ class Localization:
                     orientation = -1
                 # print("orientation :", orientation)
 
+                ### new code
+
+                x_start = np.multiply(start[0] + self.laserFrame[0], np.cos(pose_yaw)) - \
+                    np.multiply(start[1] + self.laserFrame[1], np.sin(pose_yaw)) + pose_x
+
+                y_start = np.multiply(start[0] + self.laserFrame[0], np.sin(pose_yaw)) + \
+                    np.multiply(start[1] + self.laserFrame[1], np.cos(pose_yaw)) + pose_y
+
+                x_end = np.multiply(end[0] + self.laserFrame[0], np.cos(pose_yaw)) - \
+                    np.multiply(end[1] + self.laserFrame[1], np.sin(pose_yaw)) + pose_x
+
+                y_end = np.multiply(end[0] + self.laserFrame[0], np.sin(pose_yaw)) + \
+                    np.multiply(end[1] + self.laserFrame[1], np.cos(pose_yaw)) + pose_y
+
                 # save features in desired format
                 # this variable will be fed to the correction step
-                self.laser_features[2 * line_idx, 0] = start[0] + pose_x
-                self.laser_features[2 * line_idx, 1] = start[1] + pose_y
+                self.laser_features[2 * line_idx, 0] = np.copy(x_start)
+                self.laser_features[2 * line_idx, 1] = np.copy(y_start)
                 self.laser_features[2 * line_idx, 2] = orientation
 
                 # note: each end point of a line is saved as a separate feature to avoid changing the model in the
                 # correction step
-                self.laser_features[2 * line_idx + 1, 0] = end[0] + pose_x
-                self.laser_features[2 * line_idx + 1, 1] = end[1] + pose_y
+                self.laser_features[2 * line_idx + 1, 0] = np.copy(x_end)
+                self.laser_features[2 * line_idx + 1, 1] = np.copy(y_end)
                 self.laser_features[2 * line_idx + 1, 2] = orientation
+
+                ### backup
+
+                # # save features in desired format
+                # # this variable will be fed to the correction step
+                # self.laser_features[2 * line_idx, 0] = start[0]
+                # self.laser_features[2 * line_idx, 1] = start[1]
+                # self.laser_features[2 * line_idx, 2] = orientation
+                #
+                # # note: each end point of a line is saved as a separate feature to avoid changing the model in the
+                # # correction step
+                # self.laser_features[2 * line_idx + 1, 0] = end[0]
+                # self.laser_features[2 * line_idx + 1, 1] = end[1]
+                # self.laser_features[2 * line_idx + 1, 2] = orientation
+
+                ### backup
 
             ### create marker array for visualization of the selected features ###
             self.laser_features_marker_msg.markers = []
@@ -1549,11 +1579,21 @@ class Localization:
                 marker.action = np.int(0)
                 marker.lifetime = rospy.Duration.from_sec(self.dt * 1.01)
 
-                x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] - pose_x, np.cos(pose_yaw)) - \
-                    np.multiply(self.laser_features[point, 1] + self.laserFrame[1] - pose_y, np.sin(pose_yaw)) + pose_x
+                ### new code
 
-                y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0] - pose_x, np.sin(pose_yaw)) + \
-                    np.multiply(self.laser_features[point, 1] + self.laserFrame[1] - pose_y, np.cos(pose_yaw)) + pose_y
+                x = self.laser_features[point, 0]
+
+                y = self.laser_features[point, 1]
+
+                ### backup
+
+                # x = np.multiply(self.laser_features[point, 0] + self.laserFrame[0], np.cos(pose_yaw)) - \
+                #     np.multiply(self.laser_features[point, 1] + self.laserFrame[1], np.sin(pose_yaw)) + pose_x
+                #
+                # y = np.multiply(self.laser_features[point, 0] + self.laserFrame[0], np.sin(pose_yaw)) + \
+                #     np.multiply(self.laser_features[point, 1] + self.laserFrame[1], np.cos(pose_yaw)) + pose_y
+
+                ### backup
 
                 marker.pose.position.x = x
                 marker.pose.position.y = y

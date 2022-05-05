@@ -269,13 +269,13 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Class: rviz/Marker
-      Enabled: false
+      Enabled: true
       Marker Topic: /line_markers
       Name: Marker
       Namespaces:
-        {}
+        line_extraction: true
       Queue Size: 100
-      Value: false
+      Value: true
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /map_features
@@ -289,7 +289,7 @@ Visualization Manager:
       Marker Topic: /visualization_marker_array
       Name: MarkerArray
       Namespaces:
-        {}
+        map_lines_seen: true
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -297,7 +297,7 @@ Visualization Manager:
       Marker Topic: /laser_marker_array
       Name: MarkerArray
       Namespaces:
-        {}
+        laser_features: true
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -305,7 +305,7 @@ Visualization Manager:
       Marker Topic: /most_likely_marker_array
       Name: MarkerArray
       Namespaces:
-        {}
+        most_likely_features: true
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -313,7 +313,7 @@ Visualization Manager:
       Marker Topic: /innovations
       Name: Marker
       Namespaces:
-        {}
+        innovations: true
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -321,7 +321,7 @@ Visualization Manager:
       Marker Topic: /pose_updates
       Name: Marker
       Namespaces:
-        {}
+        pose updates: true
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -345,7 +345,7 @@ Visualization Manager:
       Marker Topic: /roadmap/target
       Name: Marker
       Namespaces:
-        roadmap_target: true
+        {}
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -377,7 +377,7 @@ Visualization Manager:
       Marker Topic: /obstacle
       Name: Marker
       Namespaces:
-        obstacles: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -385,7 +385,7 @@ Visualization Manager:
       Marker Topic: /roadmap/turning_points_marker_array
       Name: MarkerArray
       Namespaces:
-        turning_points: true
+        {}
       Queue Size: 100
       Value: true
     - Class: rviz/MarkerArray
@@ -393,7 +393,7 @@ Visualization Manager:
       Marker Topic: /roadmap/roadmap_marker_array
       Name: MarkerArray
       Namespaces:
-        turning_points: true
+        {}
       Queue Size: 100
       Value: true
   Enabled: true
@@ -424,7 +424,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 22.23819351196289
+      Distance: 9.366044998168945
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -432,9 +432,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -0.29439663887023926
-        Y: 11.616538047790527
-        Z: 0.0013065338134765625
+        X: -2.193544864654541
+        Y: 6.037291526794434
+        Z: 2.353344440460205
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
