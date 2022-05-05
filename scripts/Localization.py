@@ -291,7 +291,7 @@ class KalmanFilter:
 
         # save originally predicted pose
         pose = np.copy(self.last_state_mu)
-        print("pose :", pose)
+        # print("pose :", pose)
         # number of predictions to be computed
         number_pred = np.shape(map_features)[0]
         # print("predictions :", number_pred)
@@ -384,7 +384,7 @@ class KalmanFilter:
         self.innovation_msg = Marker()
         self.innovation_msg.ns = "innovations"
         self.innovation_msg.id = 0
-        self.innovation_msg.lifetime = rospy.Duration.from_sec(50 * self.dt)
+        self.innovation_msg.lifetime = rospy.Duration.from_sec(20 * self.dt)
         self.innovation_msg.type = np.int(5)  # display marker as line list
         self.innovation_msg.scale.x = 0.07
         self.innovation_msg.header = Header()
@@ -436,7 +436,7 @@ class KalmanFilter:
                 self.count += 1
                 continue
 
-            if scores[most_likely_feature] < 0.01:
+            if scores[most_likely_feature] < 1:
                 # print("**** most likely feature ****")
                 # print("scores all too low, max :", scores[most_likely_feature])
                 # print("**** END ****")
@@ -504,7 +504,7 @@ class KalmanFilter:
 
             # correct pose and covariance with respect to this observation
             update = kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1)
-            print("update :", update)
+            # print("update :", update)
 
             # add start point to list
             p_start = Point()
@@ -575,6 +575,10 @@ class Localization:
         self.odom_msg = None  # input
         self.ground_truth_msg = None  # input
         self.control_input = np.zeros((2, 1))  # [v, w]'
+
+        # for plotting and performance assessment
+        self.currentTime = None
+        self.position_history = {'x_truth': list(), 'y_truth': list(), 'x_estimate': list(), 'y_estimate': list(), 't': list()}
 
         ### subscribers ###
         self.ground_truth_sub = rospy.Subscriber("/ground_truth", Odometry, self.groundTruthCallback)
@@ -1121,32 +1125,84 @@ class Localization:
 
         # assign either the odom or the prediction step to the pose estimate
         self.robot_pose_estimate = robot_pose_estimate.reshape(3, 1)
-        self.robot_pose_estimate = self.robot_pose_odom
+        # self.robot_pose_estimate = self.robot_pose_odom
+
+        # perform correction step on the predicted state
+        if (self.laser_features is not None):
+            self.robot_pose_estimate = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
 
         # extract the features from the latest set of range finder readings
         self.laserFeatureExtraction()
 
         # select which among all map features can be seen by the robot based on predicted pose
         # this simply takes a subset of all features the map contains
+        self.mapFeatureSelection()
+        # print("shape measurements: ", np.shape(self.laser_features))
 
-        if self.counter > 30:
-            # if any feature has been extracted from the range finder readings
-            if (self.laser_features is not None):
-                # perform correction if robot is not moving too much
-                if self.control_input[1, 0] < 0.18 and self.control_input[0, 0] < 0.45:
-                    self.mapFeatureSelection()
-                    # print("shape measurements: ", np.shape(self.laser_features))
-                    # perform correction step on the predicted state
-                    pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-                    self.robot_pose_estimate = pose
-                    # print("corrected pose :", pose)
-            self.counter = 0
-        else:
-            self.counter += 1
+        ### uncomment if we're not doing correction step at each iteration
+
+        # if self.counter > 10:
+        #     # if any feature has been extracted from the range finder readings
+        #     if (self.laser_features is not None):
+        #         # perform correction if robot is not moving too much
+        #         if self.control_input[1, 0] < 0.18 and self.control_input[0, 0] < 0.45:
+        #             self.mapFeatureSelection()
+        #             # print("shape measurements: ", np.shape(self.laser_features))
+        #             # perform correction step on the predicted state
+        #             pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+        #             self.robot_pose_estimate = pose
+        #             # print("corrected pose :", pose)
+        #     self.counter = 0
+        # else:
+        #     self.counter += 1
 
         # print("predicted pose :", self.robot_pose_estimate)
 
         ### Publish ###
+        self.publishPose()
+
+        # publish all features extracted from the map
+        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
+        self.map_features_pub.publish(self.map_features_marker_msg)
+
+        # publish the features selected from the map based on estimated robot pose
+        self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
+
+        # publish the features extracted from the laser readings based on estimated robot pose
+        self.laser_features_pub.publish(self.laser_features_marker_msg)
+
+
+    def logPosition(self):
+        """
+        Records robot position for performance assessment.
+        @param: self
+        @result: stores the waypoints in the variable self.position_history
+        """
+
+        if self.currentTime is not None:
+            theta = atan2(self.waypoints[0][0] - self.current_waypoint[0],
+                          self.waypoints[0][1] - self.current_waypoint[1])
+
+            distance = norm([self.pose_2D['robot_x'] - self.current_waypoint[0],
+                             self.pose_2D['robot_y'] - self.current_waypoint[1]])
+
+            x_estimate = self.robot_pose_estimate[0, 0]
+            y_estimate = self.robot_pose_estimate[1, 0]
+
+            self.position_history['x_truth'].append(self.pose_2D['robot_x'])
+            self.position_history['x_estimate'].append(x_estimate)
+            self.position_history['y_truth'].append(self.pose_2D['robot_y'])
+            self.position_history['y_estimate'].append(y_estimate)
+            self.position_history['t'].append(self.currentTime)
+
+
+    def publishPose(self):
+        """
+        Publish output of localization algorithm as a pose message
+        @param: self
+        @result: pose visualized in rviz
+        """
+
         # generate pose estimate message
         self.predicted_state_msg.pose.position.x = self.robot_pose_estimate[0, 0]
         self.predicted_state_msg.pose.position.y = self.robot_pose_estimate[1, 0]
@@ -1159,15 +1215,6 @@ class Localization:
         # publish pose estimate message
         self.pose_pub.publish(self.predicted_state_msg)
 
-        # publish all features extracted from the map
-        self.map_features_marker_msg.header.stamp = rospy.get_rostime()
-        self.map_features_pub.publish(self.map_features_marker_msg)
-
-        # publish the features selected from the map based on estimated robot pose
-        self.map_features_visible_pub.publish(self.map_features_seen_marker_msg)
-
-        # publish the features extracted from the laser readings based on estimated robot pose
-        self.laser_features_pub.publish(self.laser_features_marker_msg)
 
     def mapFeatureSelection(self):
         """
@@ -1247,96 +1294,96 @@ class Localization:
                 feature_lengths.append(self.map_features_length[point])
                 points_seen_end_idx.append(point)
 
-        for feature in range(len(self.map_features_start_x)):
-            removed = 0
-            total_points = len(points_seen_x)
-
-            for point in range(len(points_seen_x)):
-                point = point - removed
-                # away = 0.2
-                # # if point_removed:
-                # #     break
-                if point >= (total_points - 1 - removed):
-                    break
-
-                if (not (points_seen_x[point] == self.map_features_start_x[feature])) and (
-                        not (points_seen_x[point] == self.map_features_end_x[feature])):
-
-                    threshold = 0.95
-                    if self.map_features_orientation[feature] == -1:
-
-                        if ((points_seen_y[point] - pose_y) > 0) and (
-                                (self.map_features_start_y[feature] - pose_y) > 0):
-
-                            if (points_seen_y[point] - pose_y) > (self.map_features_start_y[feature] - pose_y):
-
-                                if ((points_seen_x[point] > (2 - threshold) * self.map_features_start_x[feature]) and
-                                        (points_seen_x[point] < (threshold) * self.map_features_end_x[feature])):
-                                    # print("**********point removed ****************")
-                                    # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
-                                    # print("feature start x,y: ", self.map_features_start_x[feature],
-                                    #       self.map_features_start_y[feature])
-                                    # print("feature end x,y: ", self.map_features_end_x[feature],
-                                    #       self.map_features_end_y[feature])
-                                    # print("***************")
-                                    point_removed = True
-                                    points_seen_x.pop(point)
-                                    points_seen_y.pop(point)
-                                    feature_lengths.pop(point)
-                                    points_seen_orientation.pop(point)
-                                    removed += 1
-
-                    if self.map_features_orientation[feature] == 1:
-
-                        if ((points_seen_x[point] - pose_x) > 0) and (
-                                (self.map_features_start_x[feature] - pose_x) > 0):
-
-                            if (points_seen_x[point] - pose_x) > (self.map_features_start_x[feature] - pose_x):
-
-                                if ((points_seen_y[point] > (2 - threshold) * self.map_features_start_y[feature]) and
-                                        (points_seen_y[point] < threshold * self.map_features_end_y[feature])):
-                                    # print("**********point removed ****************")
-                                    # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
-                                    # print("feature start x,y: ", self.map_features_start_x[feature],
-                                    #       self.map_features_start_y[feature])
-                                    # print("feature end x,y: ", self.map_features_end_x[feature],
-                                    #       self.map_features_end_y[feature])
-                                    # print("***************")
-                                    point_removed = True
-                                    points_seen_x.pop(point)
-                                    points_seen_y.pop(point)
-                                    feature_lengths.pop(point)
-                                    points_seen_orientation.pop(point)
-                                    removed += 1
-
-                        # print("*************point looked at****************")
-                        # print("looking at point #: ", point)
-                        # print("looking at feature #: ", feature)
-                        # print("length of seen points #: ", len(points_seen_x))
-                        # print("# of total points: ", total_points)
-                        # print("# of removed points: ", removed)
-                        # print("length of feature set #: ", len(self.map_features_start_x))
-
-                        if ((points_seen_x[point] - pose_x) < 0) and (
-                                (self.map_features_start_x[feature] - pose_x) < 0):
-
-                            if (points_seen_x[point] - pose_x) < (self.map_features_start_x[feature] - pose_x):
-
-                                if ((points_seen_y[point] > (2 - threshold) * self.map_features_start_y[feature]) and
-                                        (points_seen_y[point] < threshold * self.map_features_end_y[feature])):
-                                    # print("*********point removed **********")
-                                    # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
-                                    # print("feature start x,y: ", self.map_features_start_x[feature],
-                                    #       self.map_features_start_y[feature])
-                                    # print("feature end x,y: ", self.map_features_end_x[feature],
-                                    #       self.map_features_end_y[feature])
-                                    # print("***************")
-                                    point_removed = True
-                                    points_seen_x.pop(point)
-                                    points_seen_y.pop(point)
-                                    feature_lengths.pop(point)
-                                    points_seen_orientation.pop(point)
-                                    removed += 1
+        # for feature in range(len(self.map_features_start_x)):
+        #     removed = 0
+        #     total_points = len(points_seen_x)
+        #
+        #     for point in range(len(points_seen_x)):
+        #         point = point - removed
+        #         # away = 0.2
+        #         # # if point_removed:
+        #         # #     break
+        #         if point >= (total_points - 1 - removed):
+        #             break
+        #
+        #         if (not (points_seen_x[point] == self.map_features_start_x[feature])) and (
+        #                 not (points_seen_x[point] == self.map_features_end_x[feature])):
+        #
+        #             threshold = 0.95
+        #             if self.map_features_orientation[feature] == -1:
+        #
+        #                 if ((points_seen_y[point] - pose_y) > 0) and (
+        #                         (self.map_features_start_y[feature] - pose_y) > 0):
+        #
+        #                     if (points_seen_y[point] - pose_y) > (self.map_features_start_y[feature] - pose_y):
+        #
+        #                         if ((points_seen_x[point] > (2 - threshold) * self.map_features_start_x[feature]) and
+        #                                 (points_seen_x[point] < (threshold) * self.map_features_end_x[feature])):
+        #                             # print("**********point removed ****************")
+        #                             # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+        #                             # print("feature start x,y: ", self.map_features_start_x[feature],
+        #                             #       self.map_features_start_y[feature])
+        #                             # print("feature end x,y: ", self.map_features_end_x[feature],
+        #                             #       self.map_features_end_y[feature])
+        #                             # print("***************")
+        #                             point_removed = True
+        #                             points_seen_x.pop(point)
+        #                             points_seen_y.pop(point)
+        #                             feature_lengths.pop(point)
+        #                             points_seen_orientation.pop(point)
+        #                             removed += 1
+        #
+        #             if self.map_features_orientation[feature] == 1:
+        #
+        #                 if ((points_seen_x[point] - pose_x) > 0) and (
+        #                         (self.map_features_start_x[feature] - pose_x) > 0):
+        #
+        #                     if (points_seen_x[point] - pose_x) > (self.map_features_start_x[feature] - pose_x):
+        #
+        #                         if ((points_seen_y[point] > (2 - threshold) * self.map_features_start_y[feature]) and
+        #                                 (points_seen_y[point] < threshold * self.map_features_end_y[feature])):
+        #                             # print("**********point removed ****************")
+        #                             # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+        #                             # print("feature start x,y: ", self.map_features_start_x[feature],
+        #                             #       self.map_features_start_y[feature])
+        #                             # print("feature end x,y: ", self.map_features_end_x[feature],
+        #                             #       self.map_features_end_y[feature])
+        #                             # print("***************")
+        #                             point_removed = True
+        #                             points_seen_x.pop(point)
+        #                             points_seen_y.pop(point)
+        #                             feature_lengths.pop(point)
+        #                             points_seen_orientation.pop(point)
+        #                             removed += 1
+        #
+        #                 # print("*************point looked at****************")
+        #                 # print("looking at point #: ", point)
+        #                 # print("looking at feature #: ", feature)
+        #                 # print("length of seen points #: ", len(points_seen_x))
+        #                 # print("# of total points: ", total_points)
+        #                 # print("# of removed points: ", removed)
+        #                 # print("length of feature set #: ", len(self.map_features_start_x))
+        #
+        #                 if ((points_seen_x[point] - pose_x) < 0) and (
+        #                         (self.map_features_start_x[feature] - pose_x) < 0):
+        #
+        #                     if (points_seen_x[point] - pose_x) < (self.map_features_start_x[feature] - pose_x):
+        #
+        #                         if ((points_seen_y[point] > (2 - threshold) * self.map_features_start_y[feature]) and
+        #                                 (points_seen_y[point] < threshold * self.map_features_end_y[feature])):
+        #                             # print("*********point removed **********")
+        #                             # print("point seen x,y: ", points_seen_x[point], points_seen_y[point])
+        #                             # print("feature start x,y: ", self.map_features_start_x[feature],
+        #                             #       self.map_features_start_y[feature])
+        #                             # print("feature end x,y: ", self.map_features_end_x[feature],
+        #                             #       self.map_features_end_y[feature])
+        #                             # print("***************")
+        #                             point_removed = True
+        #                             points_seen_x.pop(point)
+        #                             points_seen_y.pop(point)
+        #                             feature_lengths.pop(point)
+        #                             points_seen_orientation.pop(point)
+        #                             removed += 1
 
         ######################################begin of backup####################################
 

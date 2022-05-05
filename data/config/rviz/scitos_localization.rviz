@@ -9,6 +9,7 @@ Panels:
         - /Odometry2/Covariance1
         - /RobotModel1/Links1
         - /TF1/Frames1
+        - /Marker1
         - /Path1
       Splitter Ratio: 0.5
     Tree Height: 719
@@ -269,13 +270,13 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Class: rviz/Marker
-      Enabled: true
+      Enabled: false
       Marker Topic: /line_markers
       Name: Marker
       Namespaces:
-        line_extraction: true
+        {}
       Queue Size: 100
-      Value: true
+      Value: false
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /map_features
@@ -424,7 +425,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 9.366044998168945
+      Distance: 6.8150739669799805
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -432,17 +433,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -2.193544864654541
-        Y: 6.037291526794434
-        Z: 2.353344440460205
+        X: -1.4219048023223877
+        Y: 1.3231568336486816
+        Z: 4.017148971557617
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.36539125442504883
+      Pitch: 0.6853911280632019
       Target Frame: base_footprint
-      Yaw: 2.660224199295044
+      Yaw: 3.7552289962768555
     Saved:
       - Class: rviz/Orbit
         Distance: 1.9268096685409546
