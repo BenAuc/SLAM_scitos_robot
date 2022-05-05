@@ -12,12 +12,15 @@ Team: Scitos group 3
 Team members: Benoit Auclair; Michael Bryan
 Date: March 30, 2022
 """
+import pickle
+
 import numpy
 import yaml
 from copy import deepcopy
 from laser_line_extraction.msg import LineSegmentList
 from laser_line_extraction.msg import LineSegment
 import numpy as np
+import matplotlib.pyplot as plt
 from numpy.linalg import norm as norm
 from numpy.linalg import det as matrix_det
 from numpy.linalg import inv as matrix_inv
@@ -570,6 +573,7 @@ class Localization:
 
         ### initialization of class variables ###
         self.robot_pose_odom = None
+        self.robot_pose_ground_truth = None
         self.robot_pose_estimate = None
         self.robot_pose_covariance = None
         self.odom_msg = None  # input
@@ -578,7 +582,9 @@ class Localization:
 
         # for plotting and performance assessment
         self.currentTime = None
-        self.position_history = {'x_truth': list(), 'y_truth': list(), 'x_estimate': list(), 'y_estimate': list(), 't': list()}
+        self.position_history = {'x_truth': list(), 'y_truth': list(), 'yaw_truth': list(),
+                                 'x_estimate': list(), 'y_estimate': list(), 'yaw_estimate': list(),
+                                 'x_odom': list(), 'y_odom': list(), 'yaw_odom': list(), 't': list()}
 
         ### subscribers ###
         self.ground_truth_sub = rospy.Subscriber("/ground_truth", Odometry, self.groundTruthCallback)
@@ -1105,13 +1111,11 @@ class Localization:
         """
         while not rospy.is_shutdown():
 
-            ### step only when odometry is available ###
-            if self.odom_msg:
-
-                self.step()
+            self.step()
 
             # sleep to selected frequency
             self.rate.sleep()
+
 
     def step(self):
         """
@@ -1130,33 +1134,16 @@ class Localization:
         # perform correction step on the predicted state
         if (self.laser_features is not None):
             self.robot_pose_estimate = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
+            self.currentTime = rospy.Time.now().to_sec()
+            self.logPosition()
 
-        # extract the features from the latest set of range finder readings
+                # extract the features from the latest set of range finder readings
         self.laserFeatureExtraction()
 
         # select which among all map features can be seen by the robot based on predicted pose
         # this simply takes a subset of all features the map contains
         self.mapFeatureSelection()
         # print("shape measurements: ", np.shape(self.laser_features))
-
-        ### uncomment if we're not doing correction step at each iteration
-
-        # if self.counter > 10:
-        #     # if any feature has been extracted from the range finder readings
-        #     if (self.laser_features is not None):
-        #         # perform correction if robot is not moving too much
-        #         if self.control_input[1, 0] < 0.18 and self.control_input[0, 0] < 0.45:
-        #             self.mapFeatureSelection()
-        #             # print("shape measurements: ", np.shape(self.laser_features))
-        #             # perform correction step on the predicted state
-        #             pose = self.kalman_filter.correctionStep(self.map_features_sorted_out, self.laser_features)
-        #             self.robot_pose_estimate = pose
-        #             # print("corrected pose :", pose)
-        #     self.counter = 0
-        # else:
-        #     self.counter += 1
-
-        # print("predicted pose :", self.robot_pose_estimate)
 
         ### Publish ###
         self.publishPose()
@@ -1172,28 +1159,145 @@ class Localization:
         self.laser_features_pub.publish(self.laser_features_marker_msg)
 
 
+    def createPlots(self):
+        """
+        Create plots of robot's actual and estimated position for performance assessment.
+        @param: self
+        @result: generate the plots
+        """
+        print("********")
+        print("**** plotting position ****")
+        print("********")
+
+        font_size = 24
+        line_width = 3
+        location = 2
+        rot_label = 90
+
+        ### comparison with ground truth
+
+        fig, ax = plt.subplots(3, 1)
+
+        ax[0].plot(self.position_history['t'],
+                   np.abs(np.asarray(self.position_history['x_truth']) - np.asarray(self.position_history['x_estimate'])),
+                   color='blue', linewidth=line_width, label="estimate")
+        ax[0].plot(self.position_history['t'],
+                   np.abs(np.asarray(self.position_history['x_truth']) - np.asarray(self.position_history['x_odom'])),
+                   color='red', linewidth=line_width, label="odometry")
+        ax[0].set_title("Error on localization estimate vs. odometry", fontsize=font_size)
+        ax[0].set_ylabel('x-pos. (m)', fontsize=font_size-12, rotation=rot_label)
+        ax[0].legend(loc=location, fontsize=font_size-10)
+
+        ax[1].plot(self.position_history['t'],
+                   np.abs(np.asarray(self.position_history['y_truth']) - np.asarray(self.position_history['y_estimate'])),
+                   color='blue', linewidth=line_width, label="estimate")
+        ax[1].plot(self.position_history['t'],
+                   np.abs(
+                       np.asarray(self.position_history['y_truth']) - np.asarray(self.position_history['y_odom'])),
+                   color='red', linewidth=line_width, label="odometry")
+        ax[1].set_ylabel('y-pos. (m)', fontsize=font_size-12, rotation=rot_label)
+        ax[1].legend(loc=location, fontsize=font_size-10)
+
+        ax[2].plot(self.position_history['t'],
+                   np.abs(np.asarray(self.position_history['yaw_truth']) - np.asarray(
+                       self.position_history['yaw_estimate'])),
+                   color='blue', linewidth=line_width, label="estimate")
+        ax[2].plot(self.position_history['t'],
+                   np.abs(np.asarray(self.position_history['yaw_truth']) - np.asarray(self.position_history['yaw_odom'])),
+                   color='red', linewidth=line_width, label="odometry")
+        ax[2].set_ylabel('yaw (rad)', fontsize=font_size-12, rotation=rot_label)
+        ax[2].set_xlabel('time (s)', fontsize=font_size)
+        ax[2].legend(loc=location, fontsize=font_size-10)
+
+        plt.show()
+
+
     def logPosition(self):
         """
-        Records robot position for performance assessment.
+        Records actual and estimated robot positions for performance assessment.
         @param: self
-        @result: stores the waypoints in the variable self.position_history
+        @result: stores the data in the variable self.position_history
         """
 
         if self.currentTime is not None:
-            theta = atan2(self.waypoints[0][0] - self.current_waypoint[0],
-                          self.waypoints[0][1] - self.current_waypoint[1])
 
-            distance = norm([self.pose_2D['robot_x'] - self.current_waypoint[0],
-                             self.pose_2D['robot_y'] - self.current_waypoint[1]])
+            print("**** logging position ****")
+
+            x_truth = self.robot_pose_ground_truth[0, 0]
+            y_truth = self.robot_pose_ground_truth[1, 0]
+            yaw_truth = self.robot_pose_ground_truth[2, 0]
+
+            x_odom = self.robot_pose_odom[0, 0]
+            y_odom = self.robot_pose_odom[1, 0]
+            yaw_odom = self.robot_pose_odom[2, 0]
 
             x_estimate = self.robot_pose_estimate[0, 0]
             y_estimate = self.robot_pose_estimate[1, 0]
+            yaw_estimate = self.robot_pose_estimate[2, 0]
 
-            self.position_history['x_truth'].append(self.pose_2D['robot_x'])
+            if np.abs(yaw_truth - yaw_estimate) > np.pi:
+                yaw_estimate -= 2*np.pi
+
+            if np.abs(yaw_truth - yaw_odom) > np.pi:
+                yaw_odom -= 2 * np.pi
+
+            self.position_history['x_truth'].append(x_truth)
             self.position_history['x_estimate'].append(x_estimate)
-            self.position_history['y_truth'].append(self.pose_2D['robot_y'])
+            self.position_history['x_odom'].append(x_odom)
+
+            self.position_history['y_truth'].append(y_truth)
             self.position_history['y_estimate'].append(y_estimate)
+            self.position_history['y_odom'].append(y_odom)
+
+            self.position_history['yaw_truth'].append(yaw_estimate)
+            self.position_history['yaw_estimate'].append(yaw_truth)
+            self.position_history['yaw_odom'].append(yaw_odom)
+
             self.position_history['t'].append(self.currentTime)
+
+            self.counter += 1
+
+            if self.counter == 1000:
+
+                self.createPlots()
+
+                # open_file = open("x_truth", "wb")
+                # pickle.dump(self.position_history['x_truth'], open_file)
+                # open_file.close()
+                #
+                # open_file = open("x_estimate", "wb")
+                # pickle.dump(self.position_history['x_estimate'], open_file)
+                # open_file.close()
+                #
+                # open_file = open("x_odom", "wb")
+                # pickle.dump(self.position_history['x_odom'], open_file)
+                # open_file.close()
+                #
+                # open_file = open("y_truth", "wb")
+                # pickle.dump(self.position_history['y_truth'], open_file)
+                # open_file.close()
+                #
+                # open_file = open("y_estimate", "wb")
+                # pickle.dump(self.position_history['y_estimate'], open_file)
+                # open_file.close()
+                #
+                # open_file = open("y_odom", "wb")
+                # pickle.dump(self.position_history['y_odom'], open_file)
+                # open_file.close()
+                #
+                # open_file = open("yaw_truth", "wb")
+                # pickle.dump(self.position_history['yaw_estimate'], open_file)
+                # open_file.close()
+                #
+                # open_file = open("yaw_estimate", "wb")
+                # pickle.dump(self.position_history['yaw_estimate'], open_file)
+                # open_file.close()
+                #
+                # open_file = open("yaw_odom", "wb")
+                # pickle.dump(self.position_history['yaw_odom'], open_file)
+                # open_file.close()
+
+                self.counter = 0
 
 
     def publishPose(self):
@@ -1697,7 +1801,15 @@ class Localization:
         @param: information from Gazebo
         @result: internal update of ground truth
         """
-        self.ground_truth_msg = data
+        # extract yaw angle of robot pose using the transformation on the odometry message
+        robot_yaw = euler_from_quaternion([data.pose.pose.orientation.x,
+                                                data.pose.pose.orientation.y,
+                                                data.pose.pose.orientation.z,
+                                                data.pose.pose.orientation.w],
+                                               axes='szyx')[0]
+        # extract robot pose
+        self.robot_pose_ground_truth = np.array([data.pose.pose.position.x, data.pose.pose.position.y, robot_yaw]).reshape(3, 1)
+
 
     def controlInputCallback(self, data):
         """

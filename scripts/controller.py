@@ -256,27 +256,28 @@ class MotionController:
         """
         Create plots of robot's planned and actual position for performance assessment.
         @param: self
-        @result: saves the plots
+        @result: generates the plots
         """
 
         # fig = plt.figure()
         # fig.add_axes()
         font_size = 24
+        line_width = 2
 
         fig, ax = plt.subplots(2, 1)
         #fig.subtitle("Comparison between planned and actual position as a function of time")
 
 
         # ax = fig.add_subplot(111)
-        ax[0].plot(self.position_history['t'], self.position_history['x'], color='green', linewidth=1)
-        ax[0].plot(self.position_history['t'], self.position_history['x_planned'], color='blue', linewidth=1)
+        ax[0].plot(self.position_history['t'], self.position_history['x'], color='green', linewidth=line_width)
+        ax[0].plot(self.position_history['t'], self.position_history['x_planned'], color='blue', linewidth=line_width)
         ax[0].set_title("Planned (blue) and actual (green) x-position as a function of time", fontsize=font_size)
         ax[0].set_ylabel('x position (m)', fontsize=font_size)
 
         ax[1].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['x_planned']) - np.asarray(self.position_history['x'])), color='red', linewidth=1)
-        ax[1].set_title("Error in x-position as a function of time (m)", fontsize=font_size)
-        ax[1].set_ylabel('error (m)', fontsize=font_size)
-        ax[1].set_xlabel('time (s)', fontsize=font_size)
+        ax[1].set_title("Error in x-position as a function of time", fontsize=font_size)
+        ax[1].set_ylabel('Error (m)', fontsize=font_size)
+        ax[1].set_xlabel('Time (s)', fontsize=font_size)
         # ax[1].set(xlabel='time (s)', ylabel='error (m)', fontsize=20)
         # ax[0].set_ylim(0, 6)
 
@@ -285,16 +286,16 @@ class MotionController:
         fig, ax = plt.subplots(2, 1)
 
         # ax2 = fig.add_subplot(212)
-        ax[0].plot(self.position_history['t'], self.position_history['y'], color='green', linewidth=1)
-        ax[0].plot(self.position_history['t'], self.position_history['y_planned'], color='blue', linewidth=1)
+        ax[0].plot(self.position_history['t'], self.position_history['y'], color='green', linewidth=line_width)
+        ax[0].plot(self.position_history['t'], self.position_history['y_planned'], color='blue', linewidth=line_width)
         ax[0].set_title("Planned (blue) and actual (green) y-position as a function of time", fontsize=font_size)
         ax[0].set_ylabel('y position (m)', fontsize=font_size)
         # ax[0].set(ylabel='y position (m)', fontsize=20)
 
         ax[1].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['y_planned']) - np.asarray(self.position_history['y'])), color='red', linewidth=1)
-        ax[1].set_title("Error in y-position as a function of time (m)", fontsize=font_size)
-        ax[1].set_ylabel('error (m)', fontsize=font_size)
-        ax[1].set_xlabel('time (s)', fontsize=font_size)
+        ax[1].set_title("Error in y-position as a function of time", fontsize=font_size)
+        ax[1].set_ylabel('Error (m)', fontsize=font_size)
+        ax[1].set_xlabel('Time (s)', fontsize=font_size)
         # ax[1].set(xlabel='time (s)', ylabel='error (m)', fontsize=20)
 
         plt.show()
