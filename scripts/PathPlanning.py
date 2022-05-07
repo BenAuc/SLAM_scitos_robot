@@ -180,8 +180,10 @@ class PathPlanner:
         self.features_y = list()
         self.features_orientation = list()
 
-        self.counter = 0
-        self.counter_nodes = 0
+        # Recording time and robot pose for performance tracking
+        self.startTime = 0
+        while self.startTime == 0:
+            self.startTime = rospy.Time.now().to_sec()
 
 
     def duplicatePath(self, path):
@@ -202,17 +204,26 @@ class PathPlanner:
         """
         ### automatically define target for testing purposes ###
         # comment out next few lines if the user selects the target
-        # self.target = np.array([3, 16.4]) # success * 2
-        # self.target = np.array([-9, 10]) # success * 2
-        # self.target = np.array([6, 14]) # success * 2
-        # self.target = np.array([-3, 16]) # success * 2
-        self.target = np.array([-7, 12.4])  # success * 2
+        # self.target = np.array([3, 16.4]) # success
+        # self.target = np.array([-9, 10]) # success
+        # self.target = np.array([6, 14]) # success
+        # self.target = np.array([-3, 16]) # success
+        self.target = np.array([-7, 12.4])  # success
+        # self.target = np.array([-5, 11.4])  # no success
+        # self.target = np.array([-3.3, 8.4])  # success
+        # self.target = np.array([-8, 3.4])  # no success
+        # self.target = np.array([5, 6.4])  # success
+
         self.target_selected_msg.pose.position.x = self.target[0]
         self.target_selected_msg.pose.position.y = self.target[1]
         self.target_selected_msg.pose.position.z = 0.6
         self.target_selected_msg.header.stamp = rospy.get_rostime()
         self.target_selected_pub.publish(self.target_selected_msg)
         ### comment out previous lines if the user selects the target ###
+
+        print("**********")
+        print("path planning started")
+        print("**********")
 
         while not self.target_reached and not rospy.is_shutdown():
 
@@ -231,7 +242,14 @@ class PathPlanner:
 
                 # optimize the selected roadmap
                 self.best_roadmap = self.pathOptimizer(self.best_roadmap)
-                print("list of waypoints after optimization: ", self.best_roadmap)
+                # print("list of waypoints after optimization: ", self.best_roadmap)
+
+                rospy.loginfo(f"A path has been found.")
+                endTime = rospy.Time.now().to_sec()
+                rospy.loginfo(f"Started search  [s]: {self.startTime}")
+                rospy.loginfo(f"Finished search [s]: {endTime}")
+                totalTime = endTime - self.startTime
+                rospy.loginfo(f"Elapsed time  [s]: {totalTime}")
 
                 # publish the selected roadmap
                 self.pathPublish(self.best_roadmap)
@@ -250,7 +268,6 @@ class PathPlanner:
         path_id = 0
 
         for path_item in self.path_list:
-            self.counter += 1
 
             ### if an obstacle has already been encountered, and we're moving along this obstacle ###
             if path_item.move_along_feature:
@@ -267,7 +284,7 @@ class PathPlanner:
                     self.makeTurnAround(path_id)
 
                     # register a turning point
-                    print("registering turning point")
+                    # print("registering turning point")
                     path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
 
@@ -286,7 +303,7 @@ class PathPlanner:
                     self.makeTurnTowardsTarget(path_id)
 
                     # register a turning point
-                    print("registering turning point")
+                    # print("registering turning point")
                     path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
 
@@ -323,7 +340,7 @@ class PathPlanner:
                     self.cornerHandler(path_id)
 
                     # register a turning point
-                    print("registering turning point")
+                    # print("registering turning point")
                     path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
 
@@ -334,7 +351,7 @@ class PathPlanner:
                     self.featureBumpHandler(path_id, feature_id)
 
                     # register a turning point
-                    print("registering turning point")
+                    # print("registering turning point")
                     path_item.turning_points.locations.append(path_item.current_location)
                     path_item.nodes.locations.append(path_item.current_location)
 
@@ -343,12 +360,6 @@ class PathPlanner:
                 # register the next pose as the current location
                 path_item.current_location = np.array([x, y])
                 path_item.nodes.locations.append(path_item.current_location)
-                # self.counter_nodes += 1
-                # if self.counter_nodes >= 2:
-                #     path_item.turning_points.locations.append(path_item.current_location)
-                #     self.counter_nodes = 0
-
-
 
             ### if the target is in sight ###
             # if we're not already moving towards the target
@@ -366,7 +377,7 @@ class PathPlanner:
                         self.makeTurnTowardsTarget(path_id)
 
                         # register a turning point
-                        print("registering turning point")
+                        # print("registering turning point")
                         path_item.turning_points.locations.append(path_item.current_location)
                         path_item.nodes.locations.append(path_item.current_location)
 
@@ -383,7 +394,7 @@ class PathPlanner:
                             self.makeTurnTowardsTarget(path_id)
 
                             # register a turning point
-                            print("registering turning point")
+                            # print("registering turning point")
                             path_item.turning_points.locations.append(path_item.current_location)
                             path_item.nodes.locations.append(path_item.current_location)
 

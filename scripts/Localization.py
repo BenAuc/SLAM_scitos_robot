@@ -226,20 +226,6 @@ class KalmanFilter:
         self.innovation_msg.header.frame_id = "map"
         self.innovation_msg.header.stamp = rospy.get_rostime()
 
-        # publisher of pose updates
-        self.pose_update_pub = rospy.Publisher("/pose_updates", Marker,
-                                               queue_size=1)  # queue_size=1 => only the newest map available
-
-        ### initialize the marker message & display settings ###
-        self.pose_update_msg = Marker()
-        self.pose_update_msg.ns = "pose updates"
-        self.pose_update_msg.id = 0
-        self.pose_update_msg.lifetime = rospy.Duration.from_sec(self.dt)
-        self.pose_update_msg.type = np.int(5)  # display marker as line list
-        self.pose_update_msg.scale.x = 0.07
-        self.pose_update_msg.header = Header()
-        self.pose_update_msg.header.frame_id = "map"
-        self.pose_update_msg.header.stamp = rospy.get_rostime()
 
     def predictionStep(self, control_input):
         """
@@ -291,6 +277,9 @@ class KalmanFilter:
         @result: the method returns self.last_state_mu: the state estimate corrected by the measurements
         """
         ### initialize matrices and indices ###
+
+        # thresholding the maximum likelihood technique
+        likelihood_threshold = 1.1
 
         # save originally predicted pose
         pose = np.copy(self.last_state_mu)
@@ -394,17 +383,6 @@ class KalmanFilter:
         self.innovation_msg.header.frame_id = "map"
         self.innovation_msg.header.stamp = rospy.get_rostime()
 
-        ### initialize the marker message & display settings ###
-        self.pose_update_msg = Marker()
-        self.pose_update_msg.ns = "pose updates"
-        self.pose_update_msg.id = 0
-        self.pose_update_msg.lifetime = rospy.Duration.from_sec(50 * self.dt)
-        self.pose_update_msg.type = np.int(5)  # display marker as line list
-        self.pose_update_msg.scale.x = 0.07
-        self.pose_update_msg.header = Header()
-        self.pose_update_msg.header.frame_id = "map"
-        self.pose_update_msg.header.stamp = rospy.get_rostime()
-
         # for each observed feature
         # a likelihood score is computed w.r.t. each feature in the map
         # the kalman gain is computed for this observation
@@ -439,7 +417,7 @@ class KalmanFilter:
                 self.count += 1
                 continue
 
-            if scores[most_likely_feature] < 1:
+            if scores[most_likely_feature] < likelihood_threshold:
                 # print("**** most likely feature ****")
                 # print("scores all too low, max :", scores[most_likely_feature])
                 # print("**** END ****")
@@ -508,35 +486,14 @@ class KalmanFilter:
             # correct pose and covariance with respect to this observation
             update = kalman_gain @ np.array(observation - z_hat[most_likely_feature, :]).reshape(3, 1)
             # print("update :", update)
-
-            # add start point to list
-            p_start = Point()
-            p_start.x = pose[0, 0]
-            p_start.y = pose[1, 0]
-            p_start.z = 0
-            self.pose_update_msg.points.append(p_start)
-
-            # add end point to list
-            p_end = Point()
-            p_end.x = pose[0, 0] + update[0]
-            p_end.y = pose[1, 0] + update[1]
-            p_end.z = 0
-            self.pose_update_msg.points.append(p_end)
-
-            color = ColorRGBA(0.0, 0.0, 1.0, 1.0)
-            self.pose_update_msg.colors.append(color)
-            self.pose_update_msg.colors.append(color)
-
             self.last_state_mu += update
 
             self.last_covariance = (np.eye(3) - kalman_gain @ jacobian_H[most_likely_feature, :, :]) \
                                    @ self.last_covariance
 
+        # visualiza results of matching
         self.most_likely_pub.publish(self.most_likely_marker_msg)
-
         self.innovation_pub.publish(self.innovation_msg)
-
-        self.pose_update_pub.publish(self.pose_update_msg)
 
         return self.last_state_mu
 
@@ -582,6 +539,7 @@ class Localization:
 
         # for plotting and performance assessment
         self.currentTime = None
+        self.start_logging = False
         self.position_history = {'x_truth': list(), 'y_truth': list(), 'yaw_truth': list(),
                                  'x_estimate': list(), 'y_estimate': list(), 'yaw_estimate': list(),
                                  'x_odom': list(), 'y_odom': list(), 'yaw_odom': list(), 't': list()}
@@ -1169,44 +1127,68 @@ class Localization:
         print("**** plotting position ****")
         print("********")
 
-        font_size = 24
+        # plotting parameters
+        font_size = 28
         line_width = 3
         location = 2
         rot_label = 90
+
+        # calculate rmse
+        x_est_error = np.abs(np.asarray(self.position_history['x_truth']) - np.asarray(self.position_history['x_estimate']))
+        x_est_rmse = np.sqrt(np.sum((100 * x_est_error) ** 2 / len(self.position_history['t'])))
+
+        x_odom_error = np.abs(np.asarray(self.position_history['x_truth']) - np.asarray(self.position_history['x_odom']))
+        x_odom_rmse = np.sqrt(np.sum((100 * x_odom_error) ** 2 / len(self.position_history['t'])))
+
+        y_est_error = np.abs(np.asarray(self.position_history['y_truth']) - np.asarray(self.position_history['y_estimate']))
+        y_est_rmse = np.sqrt(np.sum((100 * y_est_error) ** 2 / len(self.position_history['t'])))
+
+        y_odom_error = np.abs(
+                       np.asarray(self.position_history['y_truth']) - np.asarray(self.position_history['y_odom']))
+        y_odom_rmse = np.sqrt(np.sum((100 * y_odom_error) ** 2 / len(self.position_history['t'])))
+
+        yaw_est_error = np.abs(np.asarray(self.position_history['yaw_truth']) - np.asarray(
+                       self.position_history['yaw_estimate']))
+        yaw_est_rmse = np.sqrt(np.sum((yaw_est_error) ** 2 / len(self.position_history['t'])))
+
+        yaw_odom_error = np.abs(np.asarray(self.position_history['yaw_truth']) - np.asarray(self.position_history['yaw_odom']))
+        yaw_odom_rmse = np.sqrt(np.sum((yaw_odom_error) ** 2 / len(self.position_history['t'])))
+
+        print("x_est_rmse :", x_est_rmse)
+        print("x_odom_rmse :", x_odom_rmse)
+
+        print("y_est_rmse :", y_est_rmse)
+        print("y_odom_rmse :", y_odom_rmse)
+
+        print("yaw_est_rmse :", yaw_est_rmse)
+        print("yaw_odom_rmse :", yaw_odom_rmse)
+
 
         ### comparison with ground truth
 
         fig, ax = plt.subplots(3, 1)
 
         ax[0].plot(self.position_history['t'],
-                   np.abs(np.asarray(self.position_history['x_truth']) - np.asarray(self.position_history['x_estimate'])),
-                   color='blue', linewidth=line_width, label="estimate")
+                   x_est_error, color='blue', linewidth=line_width, label="estimate")
         ax[0].plot(self.position_history['t'],
-                   np.abs(np.asarray(self.position_history['x_truth']) - np.asarray(self.position_history['x_odom'])),
-                   color='red', linewidth=line_width, label="odometry")
+                   x_odom_error, color='red', linewidth=line_width, label="odometry")
         ax[0].set_title("Error on localization estimate vs. odometry", fontsize=font_size)
-        ax[0].set_ylabel('x-pos. (m)', fontsize=font_size-12, rotation=rot_label)
+        ax[0].set_ylabel('x-pos. (m)', fontsize=font_size-8, rotation=rot_label)
         ax[0].legend(loc=location, fontsize=font_size-10)
 
         ax[1].plot(self.position_history['t'],
-                   np.abs(np.asarray(self.position_history['y_truth']) - np.asarray(self.position_history['y_estimate'])),
-                   color='blue', linewidth=line_width, label="estimate")
-        ax[1].plot(self.position_history['t'],
-                   np.abs(
-                       np.asarray(self.position_history['y_truth']) - np.asarray(self.position_history['y_odom'])),
+                   y_est_error, color='blue', linewidth=line_width, label="estimate")
+        ax[1].plot(self.position_history['t'], y_odom_error,
                    color='red', linewidth=line_width, label="odometry")
-        ax[1].set_ylabel('y-pos. (m)', fontsize=font_size-12, rotation=rot_label)
+        ax[1].set_ylabel('y-pos. (m)', fontsize=font_size-8, rotation=rot_label)
         ax[1].legend(loc=location, fontsize=font_size-10)
 
-        ax[2].plot(self.position_history['t'],
-                   np.abs(np.asarray(self.position_history['yaw_truth']) - np.asarray(
-                       self.position_history['yaw_estimate'])),
+        ax[2].plot(self.position_history['t'], yaw_est_error,
                    color='blue', linewidth=line_width, label="estimate")
-        ax[2].plot(self.position_history['t'],
-                   np.abs(np.asarray(self.position_history['yaw_truth']) - np.asarray(self.position_history['yaw_odom'])),
+        ax[2].plot(self.position_history['t'], yaw_odom_error,
                    color='red', linewidth=line_width, label="odometry")
-        ax[2].set_ylabel('yaw (rad)', fontsize=font_size-12, rotation=rot_label)
-        ax[2].set_xlabel('time (s)', fontsize=font_size)
+        ax[2].set_ylabel('yaw (rad)', fontsize=font_size-8, rotation=rot_label)
+        ax[2].set_xlabel('time (s)', fontsize=font_size-4)
         ax[2].legend(loc=location, fontsize=font_size-10)
 
         plt.show()
@@ -1221,7 +1203,9 @@ class Localization:
 
         if self.currentTime is not None:
 
-            print("**** logging position ****")
+            # print("**** logging position ****")
+
+            threshold = 0.01
 
             x_truth = self.robot_pose_ground_truth[0, 0]
             y_truth = self.robot_pose_ground_truth[1, 0]
@@ -1235,69 +1219,38 @@ class Localization:
             y_estimate = self.robot_pose_estimate[1, 0]
             yaw_estimate = self.robot_pose_estimate[2, 0]
 
-            if np.abs(yaw_truth - yaw_estimate) > np.pi:
-                yaw_estimate -= 2*np.pi
+            if not self.start_logging:
+                if (x_truth - x_odom > threshold) or (y_truth - y_odom > threshold) or (yaw_truth - yaw_odom > threshold):
+                    self.start_logging = True
 
-            if np.abs(yaw_truth - yaw_odom) > np.pi:
-                yaw_odom -= 2 * np.pi
+            if self.start_logging:
 
-            self.position_history['x_truth'].append(x_truth)
-            self.position_history['x_estimate'].append(x_estimate)
-            self.position_history['x_odom'].append(x_odom)
+                if np.abs(yaw_truth - yaw_estimate) > np.pi:
+                    yaw_estimate -= 2*np.pi
 
-            self.position_history['y_truth'].append(y_truth)
-            self.position_history['y_estimate'].append(y_estimate)
-            self.position_history['y_odom'].append(y_odom)
+                if np.abs(yaw_truth - yaw_odom) > np.pi:
+                    yaw_odom -= 2 * np.pi
 
-            self.position_history['yaw_truth'].append(yaw_estimate)
-            self.position_history['yaw_estimate'].append(yaw_truth)
-            self.position_history['yaw_odom'].append(yaw_odom)
+                self.position_history['x_truth'].append(x_truth)
+                self.position_history['x_estimate'].append(x_estimate)
+                self.position_history['x_odom'].append(x_odom)
 
-            self.position_history['t'].append(self.currentTime)
+                self.position_history['y_truth'].append(y_truth)
+                self.position_history['y_estimate'].append(y_estimate)
+                self.position_history['y_odom'].append(y_odom)
 
-            self.counter += 1
+                self.position_history['yaw_truth'].append(yaw_estimate)
+                self.position_history['yaw_estimate'].append(yaw_truth)
+                self.position_history['yaw_odom'].append(yaw_odom)
 
-            if self.counter == 1000:
+                self.position_history['t'].append(self.currentTime)
 
-                self.createPlots()
+                self.counter += 1
 
-                # open_file = open("x_truth", "wb")
-                # pickle.dump(self.position_history['x_truth'], open_file)
-                # open_file.close()
-                #
-                # open_file = open("x_estimate", "wb")
-                # pickle.dump(self.position_history['x_estimate'], open_file)
-                # open_file.close()
-                #
-                # open_file = open("x_odom", "wb")
-                # pickle.dump(self.position_history['x_odom'], open_file)
-                # open_file.close()
-                #
-                # open_file = open("y_truth", "wb")
-                # pickle.dump(self.position_history['y_truth'], open_file)
-                # open_file.close()
-                #
-                # open_file = open("y_estimate", "wb")
-                # pickle.dump(self.position_history['y_estimate'], open_file)
-                # open_file.close()
-                #
-                # open_file = open("y_odom", "wb")
-                # pickle.dump(self.position_history['y_odom'], open_file)
-                # open_file.close()
-                #
-                # open_file = open("yaw_truth", "wb")
-                # pickle.dump(self.position_history['yaw_estimate'], open_file)
-                # open_file.close()
-                #
-                # open_file = open("yaw_estimate", "wb")
-                # pickle.dump(self.position_history['yaw_estimate'], open_file)
-                # open_file.close()
-                #
-                # open_file = open("yaw_odom", "wb")
-                # pickle.dump(self.position_history['yaw_odom'], open_file)
-                # open_file.close()
+                if self.counter == 1000:
 
-                self.counter = 0
+                    self.createPlots()
+                    self.counter = 0
 
 
     def publishPose(self):

@@ -31,7 +31,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: LaserScan
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -237,7 +237,7 @@ Visualization Manager:
       Color: 255; 255; 255
       Color Transformer: Intensity
       Decay Time: 0
-      Enabled: false
+      Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
       Min Color: 0; 0; 0
@@ -252,7 +252,7 @@ Visualization Manager:
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
-      Value: false
+      Value: true
     - Alpha: 1
       Axes Length: 1
       Axes Radius: 0.10000000149011612
@@ -315,14 +315,6 @@ Visualization Manager:
       Name: Marker
       Namespaces:
         innovations: true
-      Queue Size: 100
-      Value: true
-    - Class: rviz/Marker
-      Enabled: true
-      Marker Topic: /pose_updates
-      Name: Marker
-      Namespaces:
-        pose updates: true
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -425,7 +417,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 10.68957233428955
+      Distance: 15.483294486999512
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -433,17 +425,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -4.162661552429199
-        Y: 0.6398168802261353
-        Z: 1.5323693752288818
+        X: 0.8047587871551514
+        Y: 4.652060031890869
+        Z: 2.244574785232544
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7153911590576172
+      Pitch: 1.5697963237762451
       Target Frame: base_footprint
-      Yaw: 4.260232925415039
+      Yaw: 3.135232448577881
     Saved:
       - Class: rviz/Orbit
         Distance: 1.9268096685409546

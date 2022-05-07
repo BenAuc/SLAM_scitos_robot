@@ -24,7 +24,7 @@ from numpy import arctan2 as atan2
 import matplotlib.pyplot as plt
 from numpy.linalg import norm as norm
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseStamped
 from std_msgs.msg import Float64
 from tf.transformations import euler_from_quaternion
 from visualization_msgs.msg import MarkerArray, Marker
@@ -126,7 +126,8 @@ class MotionController:
 
         ### define subscribers ###
         # self.odom_sub = rospy.Subscriber('/controller_diffdrive/odom', Odometry, self.onOdom)
-        self.odom_sub = rospy.Subscriber('/ground_truth', Odometry, self.onOdom)
+        self.odom_sub = rospy.Subscriber('/odom', Odometry, self.onOdom)
+        self.localization_sub = rospy.Subscriber('/robot_pose', PoseStamped, self.localizationCallback)
 
         ### define publishers ###
         # self.cmd_vel_pub = rospy.Publisher("/controller_diffdrive/cmd_vel", Twist, queue_size=10)
@@ -178,6 +179,11 @@ class MotionController:
         @param: self
         @result: runs the step function for motion control update
         """
+
+        print("**********")
+        print("path execution started")
+        print("**********")
+
         while not rospy.is_shutdown():
 
             if self.waypoints is not None:
@@ -262,7 +268,7 @@ class MotionController:
         # fig = plt.figure()
         # fig.add_axes()
         font_size = 24
-        line_width = 2
+        line_width = 3
 
         fig, ax = plt.subplots(2, 1)
         #fig.subtitle("Comparison between planned and actual position as a function of time")
@@ -292,7 +298,7 @@ class MotionController:
         ax[0].set_ylabel('y position (m)', fontsize=font_size)
         # ax[0].set(ylabel='y position (m)', fontsize=20)
 
-        ax[1].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['y_planned']) - np.asarray(self.position_history['y'])), color='red', linewidth=1)
+        ax[1].plot(self.position_history['t'], np.abs(np.asarray(self.position_history['y_planned']) - np.asarray(self.position_history['y'])), color='red', linewidth=line_width)
         ax[1].set_title("Error in y-position as a function of time", fontsize=font_size)
         ax[1].set_ylabel('Error (m)', fontsize=font_size)
         ax[1].set_xlabel('Time (s)', fontsize=font_size)
@@ -446,6 +452,28 @@ class MotionController:
         # print("Twist msg being sent: {}".format(self.twist_msg))
         self.cmd_vel_pub.publish(self.twist_msg)
 
+    def localizationCallback(self, data):
+        """
+        Callback function that handles incoming Odometry messages published by the localization node
+        @param: pose data stored in the odometry message
+        @result: global variable pose_2D containing the planar
+                 coordinates robot_x, robot_y and the yaw angle theta
+        """
+        # record time for performance assessment
+        self.currentTime = rospy.Time.now().to_sec()
+
+        # generate pose estimate message
+        self.pose_2D["robot_x"] = data.pose.position.x
+        self.pose_2D["robot_y"] = data.pose.position.y
+
+        euler = euler_from_quaternion([data.pose.orientation.x,
+                                       data.pose.orientation.y,
+                                       data.pose.orientation.z,
+                                       data.pose.orientation.w])
+
+        self.theta = euler[2]
+
+
     def onOdom(self, data):
         """
         Callback function that handles incoming Odometry messages and
@@ -456,7 +484,7 @@ class MotionController:
                  coordinates robot_x, robot_y and the yaw angle theta
         """
         # record time for performance assessment
-        self.currentTime = rospy.Time.now().to_sec()
+        # self.currentTime = rospy.Time.now().to_sec()
 
         # make odometry message globally available for run() condition
         self.odom_msg = data
@@ -464,13 +492,13 @@ class MotionController:
         # TODO: Your code here
         # make 2D pose globally available as np.array
 
-        self.pose_2D["robot_x"] = self.odom_msg.pose.pose.position.x
-        self.pose_2D["robot_y"] = self.odom_msg.pose.pose.position.y
-        euler = euler_from_quaternion([self.odom_msg.pose.pose.orientation.x,
-                                       self.odom_msg.pose.pose.orientation.y,
-                                       self.odom_msg.pose.pose.orientation.z,
-                                       self.odom_msg.pose.pose.orientation.w])
-        self.theta = euler[2]
+        # self.pose_2D["robot_x"] = self.odom_msg.pose.pose.position.x
+        # self.pose_2D["robot_y"] = self.odom_msg.pose.pose.position.y
+        # euler = euler_from_quaternion([self.odom_msg.pose.pose.orientation.x,
+        #                                self.odom_msg.pose.pose.orientation.y,
+        #                                self.odom_msg.pose.pose.orientation.z,
+        #                                self.odom_msg.pose.pose.orientation.w])
+        # self.theta = euler[2]
 
     def publish_waypoints(self):
         """
